@@ -7,6 +7,8 @@ import { getFloodZones, FloodZone } from '../data/floodZones';
 import { isMalaysianLocation, getMalaysiaLocationWarning } from '../utils/locationValidator';
 import { officialLogos } from '../data/officialLogos';
 
+const GOOGLE_MAPS_LIBRARIES: ('places')[] = ['places'];
+
 interface ReportScreenProps {
   onTabChange: (tab: 'map' | 'report' | 'alert') => void;
   onScanClick: () => void;
@@ -35,6 +37,7 @@ export default function ReportScreen({ onTabChange, onScanClick, imageUri, onCle
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '',
+    libraries: GOOGLE_MAPS_LIBRARIES,
   });
 
   const reverseGeocode = (lat: number, lng: number) => {
@@ -189,6 +192,13 @@ export default function ReportScreen({ onTabChange, onScanClick, imageUri, onCle
       prev.includes(dept) ? prev.filter(d => d !== dept) : [...prev, dept]
     );
   };
+
+  // All four conditions must be met before submitting
+  const hasLocation = !!address.main && !!markerPosition;
+  const hasPhoto = !!imageUri;
+  const hasAnalysis = !!localAnalysisResult;
+  const hasDept = selectedDepts.length > 0;
+  const canSubmit = hasLocation && hasPhoto && hasAnalysis && hasDept;
 
   const handleCancel = () => {
     setDetails('');
@@ -500,9 +510,34 @@ export default function ReportScreen({ onTabChange, onScanClick, imageUri, onCle
         </section>
 
         <div className="p-4 space-y-3 mt-4 pb-28">
+          {/* Submission checklist — shown when form is incomplete */}
+          {!canSubmit && (
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Complete these to submit:</p>
+              {[
+                { done: hasLocation, label: 'Confirm a location on the map' },
+                { done: hasPhoto,    label: 'Upload a flood photo' },
+                { done: hasAnalysis, label: 'AI analysis completed on photo' },
+                { done: hasDept,    label: 'Select at least one authority to notify' },
+              ].map(({ done, label }) => (
+                <div key={label} className="flex items-center gap-2">
+                  <span className={`material-icons-round text-base ${done ? 'text-green-500' : 'text-slate-300'}`}>
+                    {done ? 'check_circle' : 'radio_button_unchecked'}
+                  </span>
+                  <span className={`text-sm ${done ? 'text-green-700 line-through' : 'text-slate-600'}`}>{label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           <button 
-            onClick={handleSubmit}
-            className="w-full font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 bg-[#ec5b13] hover:bg-[#ec5b13]/90 text-white shadow-[#ec5b13]/20 active:scale-[0.98]"
+            onClick={canSubmit ? handleSubmit : undefined}
+            disabled={!canSubmit}
+            className={`w-full font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 ${
+              canSubmit
+                ? 'bg-[#ec5b13] hover:bg-[#ec5b13]/90 text-white shadow-lg shadow-[#ec5b13]/20 active:scale-[0.98] cursor-pointer'
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+            }`}
           >
             <span className="material-icons-round">send</span>
             Submit Report

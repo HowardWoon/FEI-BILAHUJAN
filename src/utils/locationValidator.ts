@@ -1,6 +1,8 @@
 /**
  * Malaysia Location Validator
- * Validates if user input is relevant to Malaysian locations
+ * Validates if user input is relevant to Malaysian locations.
+ * Strategy: ONLY block known non-Malaysian places. Accept anything unrecognised
+ * — the geocoder always appends ", Malaysia" so it self-corrects.
  */
 
 // Malaysian states
@@ -11,7 +13,7 @@ const MALAYSIAN_STATES = [
   'malacca', 'malaya', 'kl', 'jb', 'ipoh'
 ];
 
-// Major Malaysian cities and areas
+// Major Malaysian cities and areas (non-exhaustive — validator never blocks unknowns)
 const MALAYSIAN_CITIES = [
   'kuala lumpur', 'george town', 'ipoh', 'shah alam', 'petaling jaya',
   'johor bahru', 'malacca', 'alor setar', 'miri', 'kuching', 'kota kinabalu',
@@ -38,76 +40,85 @@ const MALAYSIAN_CITIES = [
   'gua musang', 'kuala krai', 'tumpat', 'rantau panjang', 'wakaf bharu',
   'port klang', 'banting', 'kuala selangor', 'sabak bernam', 'kuala kubu bharu',
   'batang kali', 'janda baik', 'ulu yam', 'sepang', 'dengkil', 'seri kembangan',
-  'balakong', 'bukit jalil', 'kinrara', 'serdang', 'upm', 'putrajaya',
+  'balakong', 'bukit jalil', 'kinrara', 'serdang', 'upm',
   'presint', 'taman', 'jalan', 'kampung', 'kuala', 'sungai', 'bukit',
-  'batu', 'tanjung', 'teluk', 'pulau', 'pantai', 'bandar'
+  'batu', 'tanjung', 'teluk', 'pulau', 'pantai', 'bandar',
+  // Additional common towns
+  'bahau', 'tampin', 'gemas', 'rembau', 'kuala pilah', 'johol',
+  'labis', 'chaah', 'yong peng', 'simpang renggam', 'benut',
+  'senggarang', 'parit raja', 'parit sulong', 'bukit gambir',
+  'batu 9', 'pekan nanas', 'kukup', 'tanjung piai', 'bekok',
+  'kluang', 'layang', 'renggam', 'pulai chondong', 'machang',
+  'keningau', 'beaufort', 'kudat', 'papar', 'tuaran', 'ranau',
+  'semporna', 'kunak', 'tongod', 'kinabatangan', 'beluran',
+  'pitas', 'kota belud', 'penampang', 'putatan', 'membakut',
+  'limbang', 'lawas', 'sundar', 'bintulu', 'sibu', 'sarikei',
+  'kapit', 'mukah', 'dalat', 'oya', 'balingian', 'tatau',
+  'bau', 'serian', 'samarahan', 'asajaya', 'simunjan', 'sri aman',
+  'betong', 'saratok', 'roban', 'lingga', 'pusa', 'kabong',
+  'lubok antu', 'engkilili', 'lachau', 'spaoh', 'julau', 'pakan',
+  'kanowit', 'selangau', 'tanjung manis', 'balingian', 'belawai',
+  'daro', 'matu', 'bintangor', 'sematan', 'lundu', 'tebedu'
 ];
 
-// Non-Malaysian keywords to flag
+// ONLY reject clearly non-Malaysian countries and major foreign cities.
+// Do NOT add generic or short strings — false positives hurt real Malaysian places.
 const NON_MALAYSIAN_KEYWORDS = [
-  // Countries
+  // Foreign countries
   'singapore', 'indonesia', 'thailand', 'brunei', 'vietnam', 'philippines',
   'china', 'japan', 'korea', 'india', 'pakistan', 'bangladesh', 'myanmar',
-  'cambodia', 'laos', 'australia', 'new zealand', 'usa', 'uk', 'america',
-  'europe', 'africa', 'canada', 'mexico', 'brazil', 'argentina', 'russia',
-  
-  // Major non-Malaysian cities
-  'singapore', 'jakarta', 'bangkok', 'manila', 'hanoi', 'beijing', 'shanghai',
-  'tokyo', 'seoul', 'delhi', 'mumbai', 'karachi', 'dhaka', 'yangon',
-  'phnom penh', 'vientiane', 'sydney', 'melbourne', 'london', 'paris',
-  'new york', 'los angeles', 'dubai', 'hong kong', 'taipei', 'macau',
-  
-  // Country codes
-  'sg', 'id', 'th', 'bn', 'vn', 'ph', 'cn', 'jp', 'kr', 'in', 'pk', 'bd',
-  
-  // Saudi Arabia specific (from user's screenshot showing "ksa")
-  'ksa', 'saudi', 'arabia', 'riyadh', 'jeddah', 'mecca', 'medina', 'dammam'
+  'cambodia', 'laos', 'australia', 'new zealand', 'usa', 'america',
+  'united states', 'united kingdom', 'europe', 'africa', 'canada',
+  'mexico', 'brazil', 'argentina', 'russia', 'turkey',
+
+  // Major foreign cities (explicit full names only to avoid false positives)
+  'jakarta', 'bangkok', 'manila', 'hanoi', 'ho chi minh', 'beijing',
+  'shanghai', 'guangzhou', 'tokyo', 'osaka', 'seoul', 'busan',
+  'mumbai', 'delhi', 'karachi', 'dhaka', 'yangon', 'naypyidaw',
+  'phnom penh', 'vientiane', 'sydney', 'melbourne', 'auckland',
+  'london', 'paris', 'berlin', 'madrid', 'rome', 'amsterdam',
+  'new york', 'los angeles', 'chicago', 'toronto', 'dubai',
+  'abu dhabi', 'riyadh', 'jeddah', 'mecca', 'medina', 'dammam',
+  'hong kong', 'macau', 'taipei', 'tainan', 'taichung',
+
+  // Country codes / abbreviations
+  'ksa', 'saudi arabia',
 ];
 
 /**
- * Validate if a location string is relevant to Malaysia
+ * Validate if a location string is relevant to Malaysia.
+ * Only blocks KNOWN non-Malaysian places. All unrecognised inputs are allowed
+ * through — the geocoder enforces the real boundary via ", Malaysia" suffix.
  */
 export const isMalaysianLocation = (location: string): boolean => {
   const normalized = location.toLowerCase().trim();
-  
-  // Empty input is valid (user still typing)
+
+  // Very short input — user still typing, allow through
   if (!normalized || normalized.length < 2) return true;
-  
-  // Check for non-Malaysian keywords first (higher priority)
+
+  // Block known non-Malaysian places (exact substring match on full keyword only)
   for (const keyword of NON_MALAYSIAN_KEYWORDS) {
-    if (normalized.includes(keyword)) {
+    // Use word-boundary-style check: keyword must appear as a whole word
+    const regex = new RegExp(`(^|\\s|,)${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|,|$)`, 'i');
+    if (regex.test(normalized)) {
       return false;
     }
   }
-  
-  // Check for Malaysian states
+
+  // Explicitly pass known Malaysian states
   for (const state of MALAYSIAN_STATES) {
-    if (normalized.includes(state)) {
-      return true;
-    }
+    if (normalized.includes(state)) return true;
   }
-  
-  // Check for Malaysian cities
+
+  // Explicitly pass known Malaysian cities
   for (const city of MALAYSIAN_CITIES) {
-    if (normalized.includes(city)) {
-      return true;
-    }
+    if (normalized.includes(city)) return true;
   }
-  
-  // If location is very short (2-3 chars), assume valid (still typing)
-  if (normalized.length <= 3) return true;
-  
-  // For longer strings without matches, flag as potentially non-Malaysian
-  // But allow if it contains common Malaysian location words
-  const commonWords = ['taman', 'jalan', 'kampung', 'kuala', 'sungai', 'bukit', 'batu', 'teluk', 'pantai', 'bandar'];
-  for (const word of commonWords) {
-    if (normalized.includes(word)) {
-      return true;
-    }
-  }
-  
-  // If we reach here with a long string, it's likely not Malaysian
-  return normalized.length < 5;
+
+  // IMPORTANT: For anything unrecognised, allow it through.
+  // Malaysia has thousands of towns, kampungs and localities not in our list.
+  // The geocoder appends ", Malaysia" which handles the real geographic constraint.
+  return true;
 };
 
 /**
@@ -129,6 +140,8 @@ export const getMalaysianLocationExamples = (): string[] => {
     'Ipoh',
     'Melaka',
     'Kota Kinabalu',
-    'Kuching'
+    'Kuching',
+    'Taiping',
+    'Seremban',
   ];
 };

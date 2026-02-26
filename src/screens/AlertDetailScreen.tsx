@@ -1,7 +1,26 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import StatusBar from '../components/StatusBar';
 import BottomNav from '../components/BottomNav';
 import { getFloodZones } from '../data/floodZones';
+
+interface EvacCenter {
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  distanceKm: number;
+  placeId: string;
+}
+
+const haversineKm = (lat1: number, lng1: number, lat2: number, lng2: number) => {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
 
 interface AlertDetailScreenProps {
   zoneId: string | null;
@@ -14,6 +33,68 @@ export default function AlertDetailScreen({ zoneId, onBack, onScanClick, onTabCh
   const zones = useMemo(() => getFloodZones(), []);
   const zone = zoneId ? zones[zoneId] : null;
 
+  const [evacCenters, setEvacCenters] = useState<EvacCenter[]>([]);
+  const [evacLoading, setEvacLoading] = useState(true);
+  const [selectedCenter, setSelectedCenter] = useState<EvacCenter | null>(null);
+
+  useEffect(() => {
+    if (!zone) return;
+    if (!(window as any).google?.maps?.places) { setEvacLoading(false); return; }
+
+    const service = new (window as any).google.maps.places.PlacesService(
+      document.createElement('div')
+    );
+    const centerLatLng = new (window as any).google.maps.LatLng(zone.center.lat, zone.center.lng);
+
+    // Search for evacuation-suitable public places nearby: schools, community halls, stadiums
+    const keywords = ['pusat pemindahan', 'dewan orang ramai', 'balai raya', 'sekolah', 'stadium', 'mosque'];
+    const allResults: EvacCenter[] = [];
+    let done = 0;
+
+    keywords.slice(0, 3).forEach(keyword => {
+      service.nearbySearch(
+        { location: centerLatLng, radius: 10000, keyword },
+        (results: any[], status: string) => {
+          done++;
+          if (status === 'OK' && results) {
+            results.slice(0, 3).forEach((place: any) => {
+              const lat = place.geometry.location.lat();
+              const lng = place.geometry.location.lng();
+              if (!allResults.find(r => r.placeId === place.place_id)) {
+                allResults.push({
+                  name: place.name,
+                  address: place.vicinity || '',
+                  lat,
+                  lng,
+                  distanceKm: haversineKm(zone.center.lat, zone.center.lng, lat, lng),
+                  placeId: place.place_id,
+                });
+              }
+            });
+          }
+          if (done === 3) {
+            // Sort by distance, keep closest 4
+            const sorted = allResults.sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 4);
+            setEvacCenters(sorted);
+            if (sorted.length > 0) setSelectedCenter(sorted[0]);
+            setEvacLoading(false);
+          }
+        }
+      );
+    });
+
+    // Fallback if Places never calls back
+    const timer = setTimeout(() => setEvacLoading(false), 8000);
+    return () => clearTimeout(timer);
+  }, [zone]);
+
+  const handleNavigation = () => {
+    const dest = selectedCenter
+      ? `${selectedCenter.lat},${selectedCenter.lng}`
+      : zone ? `${zone.center.lat},${zone.center.lng}` : '';
+    window.open(`https://www.google.com/maps/dir/?api=1&destination=${dest}`, '_blank');
+  };
+
   if (!zone) {
     return (
       <div className="relative h-full w-full flex flex-col bg-[#F8F9FA] items-center justify-center">
@@ -25,15 +106,9 @@ export default function AlertDetailScreen({ zoneId, onBack, onScanClick, onTabCh
 
   const isHighRisk = zone.severity >= 8;
   const isMediumRisk = zone.severity >= 4 && zone.severity < 8;
-  
   const riskLabel = isHighRisk ? 'HIGH RISK' : isMediumRisk ? 'MODERATE RISK' : 'LOW RISK';
   const riskColor = isHighRisk ? 'red' : isMediumRisk ? 'orange' : 'green';
   const riskText = isHighRisk ? 'AI predicts flood peak in 1.5 hours' : isMediumRisk ? 'AI predicts possible flooding during heavy rain' : 'AI predicts no immediate flood risk';
-  
-  const handleNavigation = () => {
-    // Open Google Maps navigation
-    window.open(`https://www.google.com/maps/dir/?api=1&destination=${zone.center.lat},${zone.center.lng}`, '_blank');
-  };
 
   // Generate a static map image URL based on the zone's center coordinates
   const mapImageUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${zone.center.lat},${zone.center.lng}&zoom=14&size=600x300&maptype=roadmap&markers=color:${riskColor}%7Clabel:!%7C${zone.center.lat},${zone.center.lng}&key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}`;
@@ -162,7 +237,7 @@ export default function AlertDetailScreen({ zoneId, onBack, onScanClick, onTabCh
 
         {/* AI Recommendation */}
         <div className="bg-[#1E293B] text-white p-5 rounded-3xl shadow-lg">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-[#818CF8]">alt_route</span>
               <h3 className="font-bold text-sm tracking-wide">AI RECOMMENDATION</h3>
@@ -171,13 +246,55 @@ export default function AlertDetailScreen({ zoneId, onBack, onScanClick, onTabCh
               {isHighRisk ? 'Urgent' : 'Advisory'}
             </span>
           </div>
-          
-          <p className="text-sm leading-relaxed mb-5">
-            <span className="text-[#F87171] font-bold">{zone.aiRecommendation.impassableRoads}</span> Evacuate to {zone.aiRecommendation.evacuationCenter} {zone.aiRecommendation.evacuationRoute}.
+
+          <p className="text-[10px] text-slate-400 mb-4">
+            Nearest evacuation centres within <span className="text-white font-bold">10 km</span> of this alert zone
           </p>
-          
+
+          {evacLoading ? (
+            <div className="flex items-center justify-center gap-2 py-6 text-slate-400">
+              <span className="material-symbols-outlined animate-spin text-lg">progress_activity</span>
+              <p className="text-xs">Searching nearby centres…</p>
+            </div>
+          ) : evacCenters.length === 0 ? (
+            <div className="bg-white/5 rounded-2xl p-4 mb-4 text-center">
+              <span className="material-symbols-outlined text-slate-500 text-2xl">location_off</span>
+              <p className="text-xs text-slate-400 mt-1">No places found nearby. Proceed to the nearest school or community hall.</p>
+            </div>
+          ) : (
+            <div className="space-y-2 mb-4">
+              {evacCenters.map((c, i) => {
+                const isSelected = selectedCenter?.placeId === c.placeId;
+                return (
+                  <button
+                    key={c.placeId}
+                    onClick={() => setSelectedCenter(c)}
+                    className={`w-full flex items-center gap-3 p-3 rounded-2xl border transition-all text-left ${
+                      isSelected
+                        ? 'bg-[#6366F1]/20 border-[#6366F1]/60'
+                        : 'bg-white/5 border-white/10 hover:bg-white/10'
+                    }`}
+                  >
+                    {/* Rank badge */}
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 font-bold text-sm ${
+                      i === 0 ? 'bg-green-500 text-white' : 'bg-white/10 text-slate-300'
+                    }`}>{i + 1}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-xs font-bold truncate">{c.name}</p>
+                      <p className="text-slate-400 text-[10px] truncate">{c.address}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className={`text-xs font-bold ${i === 0 ? 'text-green-400' : 'text-slate-300'}`}>{c.distanceKm.toFixed(1)} km</p>
+                      {isSelected && <span className="material-symbols-outlined text-[#818CF8] text-sm">check_circle</span>}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {zone.notifiedDepts && zone.notifiedDepts.length > 0 && (
-            <div className="mb-5 bg-white/5 p-3 rounded-xl border border-white/10">
+            <div className="mb-4 bg-white/5 p-3 rounded-xl border border-white/10">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Notified Authorities</p>
               <div className="flex flex-wrap gap-2">
                 {zone.notifiedDepts.map(dept => (
@@ -188,13 +305,14 @@ export default function AlertDetailScreen({ zoneId, onBack, onScanClick, onTabCh
               </div>
             </div>
           )}
-          
-          <button 
+
+          <button
             onClick={handleNavigation}
-            className="w-full bg-[#6366F1] hover:bg-[#4F46E5] text-white py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors active:scale-95"
+            disabled={evacLoading}
+            className="w-full bg-[#6366F1] hover:bg-[#4F46E5] disabled:opacity-50 text-white py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors active:scale-95"
           >
             <span className="material-symbols-outlined text-lg">navigation</span>
-            Start Navigation
+            {selectedCenter ? `Navigate to ${selectedCenter.name}` : 'Start Navigation'}
           </button>
         </div>
       </main>

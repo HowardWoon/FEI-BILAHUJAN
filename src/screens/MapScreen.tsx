@@ -1,5 +1,27 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { GoogleMap, useJsApiLoader, Polygon } from '@react-google-maps/api';
+import { GoogleMap, useJsApiLoader, Polygon, Circle } from '@react-google-maps/api';
+
+const GOOGLE_MAPS_LIBRARIES: ('places')[] = ['places'];
+
+// Approximate state-level circle radii in metres for visibility at country zoom
+const STATE_RADIUS_M: Record<string, number> = {
+  'Sarawak':          160000,
+  'Sabah':            130000,
+  'Pahang':            90000,
+  'Perak':             75000,
+  'Johor':             70000,
+  'Kelantan':          65000,
+  'Terengganu':        60000,
+  'Kedah':             50000,
+  'Selangor':          45000,
+  'Negeri Sembilan':   40000,
+  'Penang':            22000,
+  'Melaka':            18000,
+  'Perlis':            12000,
+  'Kuala Lumpur':      14000,
+  'Putrajaya':          8000,
+  'Labuan':             6000,
+};
 import BottomNav from '../components/BottomNav';
 import StatusBar from '../components/StatusBar';
 import { PrivacyNotice } from '../components/PrivacyNotice';
@@ -38,6 +60,7 @@ export default function MapScreen({ onScanClick, onTabChange, initialShowLocatio
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const [locationWarning, setLocationWarning] = useState<string>('');
+  const [locationNotFound, setLocationNotFound] = useState(false);
 
   const onMapLoad = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
@@ -50,6 +73,7 @@ export default function MapScreen({ onScanClick, onTabChange, initialShowLocatio
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '',
+    libraries: GOOGLE_MAPS_LIBRARIES,
   });
 
   const center = useMemo(() => ({
@@ -223,8 +247,9 @@ export default function MapScreen({ onScanClick, onTabChange, initialShowLocatio
       return;
     }
     
-    // Clear warning if location is valid
+    // Clear warning and not-found flag
     setLocationWarning('');
+    setLocationNotFound(false);
     
     if (!isSelectingMode) {
       setIsSearchActive(true);
@@ -258,13 +283,44 @@ export default function MapScreen({ onScanClick, onTabChange, initialShowLocatio
       const geocoder = new window.google.maps.Geocoder();
       geocoder.geocode({ address: `${manualLocation}, Malaysia` }, (results, status) => {
         if (status === 'OK' && results && results[0]) {
-          const location = results[0].geometry.location;
-          const newCenter = { lat: location.lat(), lng: location.lng() };
+          const result = results[0];
+          const location = result.geometry.location;
+          const lat = location.lat();
+          const lng = location.lng();
+
+          // Check 1: formatted address must explicitly contain "Malaysia"
+          const formattedAddress = result.formatted_address || '';
+          const isMalaysiaResult = formattedAddress.toLowerCase().includes('malaysia');
+
+          // Check 2: coordinates within Malaysia's geographic bounds
+          const withinBounds =
+            lat >= 1.0 && lat <= 7.5 &&
+            lng >= 99.0 && lng <= 120.0;
+
+          // Check 3: result must be a real named place, not a fuzzy route/premise/plus-code match
+          const VALID_PLACE_TYPES = new Set([
+            'locality', 'sublocality', 'sublocality_level_1', 'sublocality_level_2',
+            'neighborhood', 'colloquial_area',
+            'administrative_area_level_1', 'administrative_area_level_2',
+            'administrative_area_level_3', 'administrative_area_level_4',
+            'natural_feature', 'establishment', 'point_of_interest',
+            'park', 'airport', 'university', 'hospital', 'school',
+          ]);
+          const resultTypes: string[] = result.types || [];
+          const isRealPlace = resultTypes.some(t => VALID_PLACE_TYPES.has(t));
+
+          if (!isMalaysiaResult || !withinBounds || !isRealPlace) {
+            setLocationNotFound(true);
+            setSearchedZone(null);
+            setIsSearchActive(false);
+            return;
+          }
+
+          const newCenter = { lat, lng };
           setMapCenter(newCenter);
           setMapZoom(14);
           if (!isSelectingMode) {
-            // Generate a simulated zone for the searched location
-            const simulatedZone = generateSimulatedZone(manualLocation, newCenter.lat, newCenter.lng);
+            const simulatedZone = generateSimulatedZone(manualLocation, lat, lng);
             setSearchedZone(simulatedZone);
           }
           if (mapRef.current) {
@@ -272,7 +328,10 @@ export default function MapScreen({ onScanClick, onTabChange, initialShowLocatio
             mapRef.current.setZoom(14);
           }
         } else {
-          console.error("Geocoding failed: ", status);
+          // Geocoding returned no results — show not found error
+          setLocationNotFound(true);
+          setSearchedZone(null);
+          setIsSearchActive(false);
         }
       });
     }
@@ -374,28 +433,36 @@ export default function MapScreen({ onScanClick, onTabChange, initialShowLocatio
     return () => clearInterval(interval);
   }, []);
 
+  const getZoneColors = (severity: number) => {
+    if (severity >= 8) return { fill: '#ef4444', stroke: '#dc2626' };
+    if (severity >= 4) return { fill: '#f97316', stroke: '#ea580c' };
+    return { fill: '#22c55e', stroke: '#16a34a' };
+  };
+
   const getPolygonOptions = (zone: FloodZone) => {
-    let fillColor = '#22c55e'; // green
-    let strokeColor = '#16a34a';
-
-    if (zone.severity >= 8) {
-      fillColor = '#ef4444'; // red
-      strokeColor = '#dc2626';
-    } else if (zone.severity >= 4) {
-      fillColor = '#f97316'; // orange
-      strokeColor = '#ea580c';
-    }
-
+    const { fill, stroke } = getZoneColors(zone.severity);
     return {
-      fillColor,
+      fillColor: fill,
       fillOpacity: 0.35,
-      strokeColor,
+      strokeColor: stroke,
       strokeOpacity: 0.8,
       strokeWeight: 2,
       clickable: true,
-      zIndex: 1
+      zIndex: 2
     };
   };
+
+  // Build one circle per state, using the highest severity zone in that state
+  const stateCircles = useMemo(() => {
+    const byState: Record<string, FloodZone> = {};
+    Object.values(zones).forEach(z => {
+      const zone = z as FloodZone;
+      if (!byState[zone.state] || zone.severity > byState[zone.state].severity) {
+        byState[zone.state] = zone;
+      }
+    });
+    return Object.values(byState);
+  }, [zones]);
 
   return (
     <div className="relative h-full w-full flex flex-col bg-[#F9FAFB]">
@@ -415,8 +482,33 @@ export default function MapScreen({ onScanClick, onTabChange, initialShowLocatio
               onLoad={onMapLoad}
               onUnmount={onMapUnmount}
             >
+              {/* State-level circles — visible at any zoom */}
+              {stateCircles.map(zone => {
+                const { fill, stroke } = getZoneColors(zone.severity);
+                const radius = STATE_RADIUS_M[zone.state] ?? 40000;
+                return (
+                  <Circle
+                    key={`circle_${zone.state}`}
+                    center={{ lat: zone.center.lat, lng: zone.center.lng }}
+                    radius={radius}
+                    options={{
+                      fillColor: fill,
+                      fillOpacity: 0.18,
+                      strokeColor: stroke,
+                      strokeOpacity: 0.7,
+                      strokeWeight: 2,
+                      clickable: true,
+                      zIndex: 1,
+                    }}
+                    onClick={() => setSelectedZone(zone)}
+                  />
+                );
+              })}
+
+              {/* Fine-grained polygons — visible when zoomed in */}
               {Object.values(zones).map((z) => {
                 const zone = z as FloodZone;
+                if (!zone.paths || zone.paths.length === 0) return null;
                 return (
                   <Polygon
                     key={zone.id}
@@ -446,6 +538,7 @@ export default function MapScreen({ onScanClick, onTabChange, initialShowLocatio
               onChange={(e) => {
                 const value = e.target.value;
                 setManualLocation(value);
+                setLocationNotFound(false);
                 
                 // Validate if location is in Malaysia
                 if (value.trim().length > 0 && !isMalaysianLocation(value)) {
@@ -474,6 +567,17 @@ export default function MapScreen({ onScanClick, onTabChange, initialShowLocatio
             <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2 shadow-md">
               <span className="material-icons-round text-red-500 text-lg mt-0.5">warning</span>
               <p className="text-red-700 text-sm leading-relaxed">{locationWarning}</p>
+            </div>
+          )}
+
+          {/* Location Not Found Message */}
+          {locationNotFound && !locationWarning && (
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2 shadow-md">
+              <span className="material-icons-round text-red-500 text-lg mt-0.5">location_off</span>
+              <div>
+                <p className="text-red-700 text-sm font-semibold">Location not found in Malaysia</p>
+                <p className="text-red-500 text-xs mt-0.5">"<span className="font-medium">{manualLocation}</span>" could not be matched to any place in Malaysia. Try a city, town, or district name.</p>
+              </div>
             </div>
           )}
           

@@ -27,14 +27,6 @@ export default function App() {
   const [cameraOrigin, setCameraOrigin] = useState<'map' | 'report' | 'alerts' | 'alert-detail'>('map');
   const [scanLocation, setScanLocation] = useState<{ lat: number; lng: number; address: string } | null>(null);
   const [notifications, setNotifications] = useState<{ id: number; zoneId: string; zone: FloodZone }[]>([]);
-  const [hasVisitedReport, setHasVisitedReport] = useState(false);
-
-  useEffect(() => {
-    if (currentScreen === 'report') {
-      setHasVisitedReport(true);
-    }
-  }, [currentScreen]);
-
   useEffect(() => {
     // Initialize 24/7 data collection system
     initializeDataCollection();
@@ -112,8 +104,14 @@ export default function App() {
       
       {currentScreen === 'camera' && (
         <CameraScreen 
-          onBack={() => setCurrentScreen('map')}
+          onBack={() => {
+            if (cameraOrigin === 'report') setCurrentScreen('report');
+            else if (cameraOrigin === 'alert-detail') setCurrentScreen('alert-detail');
+            else if (cameraOrigin === 'alerts') setCurrentScreen('alerts');
+            else setCurrentScreen('map');
+          }}
           onAnalysisComplete={handleAnalysisComplete}
+          onTabChange={handleTabChange}
         />
       )}
       
@@ -128,8 +126,8 @@ export default function App() {
         />
       )}
       
-      {hasVisitedReport && (
-        <div className={currentScreen === 'report' ? 'block h-full w-full' : 'hidden'}>
+      {currentScreen === 'report' && (
+        <div className="block h-full w-full">
           <ReportScreen 
             onTabChange={handleTabChange}
             onScanClick={() => {

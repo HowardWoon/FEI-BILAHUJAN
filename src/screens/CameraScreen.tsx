@@ -5,12 +5,17 @@ import { analyzeFloodImage, FloodAnalysisResult } from '../services/gemini';
 interface CameraScreenProps {
   onBack: () => void;
   onAnalysisComplete: (result: FloodAnalysisResult, imageUri: string) => void;
+  onTabChange: (tab: 'map' | 'report' | 'alert') => void;
 }
 
-export default function CameraScreen({ onBack, onAnalysisComplete }: CameraScreenProps) {
+export default function CameraScreen({ onBack, onAnalysisComplete, onTabChange }: CameraScreenProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rejectionModal, setRejectionModal] = useState<{ visible: boolean; reason: string }>({
+    visible: false,
+    reason: ''
+  });
 
   const handleScanClick = () => {
     fileInputRef.current?.click();
@@ -46,25 +51,9 @@ export default function CameraScreen({ onBack, onAnalysisComplete }: CameraScree
           const base64Data = resizedBase64.split(',')[1];
 
           try {
-            // Add a timeout promise to prevent hanging, resolve with fallback data after 15s
-            const timeoutPromise = new Promise<any>((resolve) => {
-              setTimeout(() => resolve({
-                isRelevant: true,
-                estimatedDepth: "0.2m / Ankle-Deep",
-                detectedHazards: "Water pooling, slippery surfaces",
-                passability: "Passable with caution",
-                aiConfidence: 85,
-                directive: "Minor water pooling detected. Proceed with caution.",
-                riskScore: 3,
-                severity: "MODERATE",
-                waterDepth: "Normal/Minor (Ankle to knee-deep)",
-                waterCurrent: "Normal (Stagnant/pooling)",
-                infrastructureStatus: "Normal",
-                humanRisk: "Low risk",
-                estimatedStartTime: "Already Started",
-                estimatedEndTime: new Date(Date.now() + 2 * 60 * 60 * 1000).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }),
-                eventType: "Heavy Rain"
-              }), 15000);
+            // Timeout after 30s — reject instead of returning fake data
+            const timeoutPromise = new Promise<never>((_, reject) => {
+              setTimeout(() => reject(new Error('Analysis timed out. The AI took too long to respond. Please try again with a clearer image.')), 30000);
             });
 
             const result = await Promise.race([
@@ -73,9 +62,12 @@ export default function CameraScreen({ onBack, onAnalysisComplete }: CameraScree
             ]);
 
             if (!result.isRelevant) {
-              window.alert("Invalid image detected. Please upload an image relevant to flood monitoring (e.g., flooded area, drainage, street).");
               setIsAnalyzing(false);
-              onBack();
+              setRejectionModal({
+                visible: true,
+                reason: result.rejectionReason ||
+                  'This image does not appear to show a flood or drain condition. Please upload a photo of a flooded area, waterlogged road, blocked drain, or overflowing drainage system.'
+              });
             } else {
               onAnalysisComplete(result, resizedBase64);
             }
@@ -97,6 +89,69 @@ export default function CameraScreen({ onBack, onAnalysisComplete }: CameraScree
   return (
     <div className="relative h-full w-full bg-slate-900 flex flex-col">
       <StatusBar theme="dark" />
+
+      {/* In-app Rejection Modal */}
+      {rejectionModal.visible && (
+        <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end justify-center p-4">
+          <div className="w-full bg-white rounded-[2rem] shadow-2xl overflow-hidden animate-fade-in">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-red-600 to-red-500 px-5 py-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                <span className="material-icons-round text-white text-xl">no_photography</span>
+              </div>
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-widest text-red-100">AI Image Validation</p>
+                <p className="text-white font-black text-base leading-tight">Image Not Accepted</p>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="px-5 py-4">
+              <p className="text-slate-600 text-sm leading-relaxed mb-4">
+                {rejectionModal.reason}
+              </p>
+
+              {/* Accepted types — 2x2 grid, icon + label stacked */}
+              <div className="bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3 mb-4">
+                <p className="text-[9px] font-bold uppercase tracking-widest text-blue-600 mb-3 text-center">Accepted Image Types</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { icon: 'water',           label: 'Flooded Roads' },
+                    { icon: 'waves',           label: 'Rivers & Canals' },
+                    { icon: 'water_drop',      label: 'Drain Blockages' },
+                    { icon: 'flood',           label: 'Waterlogged Areas' },
+                  ].map(({ icon, label }) => (
+                    <div key={icon} className="flex flex-col items-center justify-center bg-white border border-blue-100 rounded-xl py-3 gap-1.5">
+                      <span className="material-icons-round text-blue-500 text-2xl">{icon}</span>
+                      <span className="text-blue-700 text-xs font-semibold text-center leading-tight">{label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setRejectionModal({ visible: false, reason: '' });
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                  }}
+                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-sm transition-all active:scale-95"
+                >
+                  Try Again
+                </button>
+                <button
+                  onClick={() => onTabChange('map')}
+                  className="flex-1 py-3 bg-[#E65100] hover:bg-[#CC4800] text-white font-bold rounded-2xl text-sm flex items-center justify-center gap-2 shadow-md transition-all active:scale-95"
+                >
+                  <span className="material-icons-round text-base">map</span>
+                  Go to Map
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       
       <header className="flex items-center justify-between px-6 py-2 z-10">
         <button 
@@ -148,41 +203,55 @@ export default function CameraScreen({ onBack, onAnalysisComplete }: CameraScree
         </div>
 
         {/* Bottom Card */}
-        <div className="bg-white rounded-[2.5rem] p-6 shadow-xl shrink-0">
-          <div className="flex flex-col items-center text-center">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="material-icons-outlined text-yellow-500">lightbulb</span>
-              <h2 className="text-base font-bold text-slate-800 uppercase tracking-wider">Quick Tip</h2>
-            </div>
-            <p className="text-slate-500 text-sm mb-6">
-              Point The Camera Directly At The Drain!
-            </p>
-            
-            {error && (
-              <div className="w-full mb-4 p-3 bg-red-50 border border-red-100 rounded-xl text-left">
-                <p className="text-red-600 font-bold text-xs uppercase mb-1">Error</p>
-                <p className="text-red-800 text-sm">{error}</p>
-              </div>
-            )}
-
-            <input 
-              type="file" 
-              accept="image/*" 
-              capture="environment"
-              className="hidden" 
-              ref={fileInputRef}
-              onChange={handleFileChange}
-            />
-            
-            <button 
-              onClick={handleScanClick}
-              disabled={isAnalyzing}
-              className="w-full bg-[#6B59D3] disabled:opacity-50 hover:bg-opacity-90 active:scale-95 transition-all text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-[#6B59D3]/30"
-            >
-              <span className="material-icons-outlined">center_focus_weak</span>
-              {isAnalyzing ? 'Scanning...' : 'Scan'}
-            </button>
+        <div className="bg-white rounded-[2.5rem] px-5 pt-5 pb-5 shadow-xl shrink-0">
+          {/* Title */}
+          <div className="flex items-center justify-center gap-2 mb-1">
+            <span className="material-icons-outlined text-yellow-500 text-lg">lightbulb</span>
+            <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider">Scan Guidelines</h2>
           </div>
+          <p className="text-center text-slate-500 text-xs mb-4 leading-relaxed">
+            Capture a clear image of a <span className="font-semibold text-slate-700">flooded area</span> or <span className="font-semibold text-slate-700">drain condition</span>.
+          </p>
+
+          {/* 4-column icon grid — icon on top, label below, no overflow */}
+          <div className="grid grid-cols-4 gap-2 mb-4 w-full">
+            {[
+              { icon: 'water',      label: 'Flooded\nRoads' },
+              { icon: 'waves',      label: 'Rivers &\nCanals' },
+              { icon: 'water_drop', label: 'Drain\nBlockage' },
+              { icon: 'flood',      label: 'Waterlogged\nAreas' },
+            ].map(({ icon, label }) => (
+              <div key={icon} className="flex flex-col items-center justify-center bg-blue-50 border border-blue-100 rounded-xl py-3 px-1 gap-1">
+                <span className="material-icons-round text-blue-500 text-xl">{icon}</span>
+                <span className="text-blue-700 text-[10px] font-semibold text-center leading-tight whitespace-pre-line">{label}</span>
+              </div>
+            ))}
+          </div>
+
+          {error && (
+            <div className="w-full mb-3 p-3 bg-red-50 border border-red-100 rounded-xl">
+              <p className="text-red-600 font-bold text-xs uppercase mb-1">Error</p>
+              <p className="text-red-800 text-xs">{error}</p>
+            </div>
+          )}
+
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+          />
+
+          <button
+            onClick={handleScanClick}
+            disabled={isAnalyzing}
+            className="w-full bg-[#6B59D3] disabled:opacity-50 hover:bg-opacity-90 active:scale-95 transition-all text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-[#6B59D3]/30"
+          >
+            <span className="material-icons-outlined">center_focus_weak</span>
+            {isAnalyzing ? 'Scanning...' : 'Scan'}
+          </button>
         </div>
       </main>
     </div>
