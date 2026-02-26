@@ -1,0 +1,483 @@
+import React, { useMemo, useState } from 'react';
+import StatusBar from '../components/StatusBar';
+import BottomNav from '../components/BottomNav';
+import { getFloodZones, FloodZone, addFloodZone, createZone, useFloodZones } from '../data/floodZones';
+import { fetchLiveWeatherAndCCTV } from '../services/gemini';
+
+interface AlertsScreenProps {
+  onTabChange: (tab: 'map' | 'report' | 'alert') => void;
+  onAlertClick: (zoneId: string) => void;
+  onScanClick: () => void;
+}
+
+export default function AlertsScreen({ onTabChange, onAlertClick, onScanClick }: AlertsScreenProps) {
+  const allZones = useFloodZones();
+  
+  const zones = useMemo(() => {
+    const now = new Date();
+    const filtered: Record<string, FloodZone> = {};
+    Object.entries(allZones).forEach(([id, zone]) => {
+      const floodZone = zone as FloodZone;
+      if (floodZone.estimatedEndTime && floodZone.estimatedEndTime !== 'N/A' && floodZone.estimatedEndTime !== 'Unknown') {
+        const endTime = new Date(floodZone.estimatedEndTime);
+        // Only filter out if it's a valid date and it's in the past
+        if (!isNaN(endTime.getTime()) && endTime < now) {
+          // Skip this zone
+        } else {
+          filtered[id] = floodZone;
+        }
+      } else {
+        filtered[id] = floodZone;
+      }
+    });
+    return filtered;
+  }, [allZones]);
+
+  const [selectedState, setSelectedState] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
+
+  const handleRefreshLiveData = async () => {
+    setIsRefreshing(true);
+    setRefreshStatus('Connecting to Google Weather & CCTV...');
+    
+    try {
+      const allStatesList = [
+        'Selangor', 'Kuala Lumpur', 'Johor', 'Penang', 'Pahang', 
+        'Sarawak', 'Sabah', 'Perak', 'Kedah', 'Kelantan', 
+        'Terengganu', 'Negeri Sembilan', 'Melaka', 'Perlis', 
+        'Putrajaya', 'Labuan'
+      ];
+      
+      const statesToUpdate = selectedState ? [selectedState] : allStatesList;
+      
+      if (!selectedState) {
+        setRefreshStatus('Analyzing live data for all states in Malaysia...');
+      } else {
+        setRefreshStatus(`Analyzing live data for ${selectedState}...`);
+      }
+      
+      // Process in batches of 2 to avoid rate limits but keep it fast
+      const batchSize = 2;
+      for (let i = 0; i < statesToUpdate.length; i += batchSize) {
+        const batch = statesToUpdate.slice(i, i + batchSize);
+        
+        await Promise.all(batch.map(async (state) => {
+          try {
+            const liveData = await fetchLiveWeatherAndCCTV(state);
+            
+            // Create a new zone based on the live data
+            const newZoneId = `live_${state.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`;
+            
+            // Assign a mock coordinate based on the state (in a real app, we'd geocode the state)
+            let lat = 3.14, lng = 101.69; // Default KL
+            if (state === 'Selangor') { lat = 3.07; lng = 101.51; }
+            else if (state === 'Kelantan') { lat = 6.12; lng = 102.23; }
+            else if (state === 'Johor') { lat = 1.49; lng = 103.74; }
+            else if (state === 'Penang') { lat = 5.35; lng = 100.28; }
+            else if (state === 'Pahang') { lat = 3.81; lng = 103.32; }
+            else if (state === 'Sarawak') { lat = 1.55; lng = 110.35; }
+            else if (state === 'Sabah') { lat = 5.98; lng = 116.07; }
+            else if (state === 'Perak') { lat = 4.59; lng = 101.09; }
+            else if (state === 'Kedah') { lat = 6.12; lng = 100.36; }
+            else if (state === 'Terengganu') { lat = 5.33; lng = 103.15; }
+            else if (state === 'Negeri Sembilan') { lat = 2.72; lng = 101.94; }
+            else if (state === 'Melaka') { lat = 2.19; lng = 102.25; }
+            else if (state === 'Perlis') { lat = 6.44; lng = 100.20; }
+            else if (state === 'Putrajaya') { lat = 2.92; lng = 101.69; }
+            else if (state === 'Labuan') { lat = 5.28; lng = 115.24; }
+            
+            const newZone = createZone(
+              newZoneId,
+              `Statewide Overview`,
+              `Live Weather: ${liveData.weatherCondition}`,
+              state,
+              'Live Region',
+              lat,
+              lng,
+              liveData.severity,
+              liveData.aiAnalysisText,
+              0.05,
+              ['Google Weather', 'CCTV Live', 'AI Analysis']
+            );
+            
+            newZone.eventType = liveData.isRaining ? 'Heavy Rain' : 'Normal';
+            
+            addFloodZone(newZone);
+          } catch (err) {
+            console.error(`Failed to fetch data for ${state}:`, err);
+          }
+        }));
+        
+        // Add a small delay between batches to avoid rate limiting
+        if (i + batchSize < statesToUpdate.length) {
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        }
+      }
+      
+      setRefreshStatus('Live data updated successfully!');
+      setTimeout(() => setRefreshStatus(null), 3000);
+      
+    } catch (error) {
+      console.error("Failed to refresh live data:", error);
+      setRefreshStatus('Failed to update live data.');
+      setTimeout(() => setRefreshStatus(null), 3000);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // Group zones by state
+  const stateGroups = useMemo(() => {
+    const groups: Record<string, { region: string, zones: FloodZone[], maxSeverity: number, activeReports: number }> = {};
+    
+    // Initialize all states to ensure they appear even if empty
+    const allStates = [
+      { name: 'Selangor', region: 'Central Region' },
+      { name: 'Kuala Lumpur', region: 'Federal Territory' },
+      { name: 'Johor', region: 'Southern Region' },
+      { name: 'Penang', region: 'Northern Region' },
+      { name: 'Pahang', region: 'East Coast' },
+      { name: 'Sarawak', region: 'East Malaysia' },
+      { name: 'Sabah', region: 'East Malaysia' },
+      { name: 'Perak', region: 'Northern Region' },
+      { name: 'Kedah', region: 'Northern Region' },
+      { name: 'Kelantan', region: 'East Coast' },
+      { name: 'Terengganu', region: 'East Coast' },
+      { name: 'Negeri Sembilan', region: 'Central Region' },
+      { name: 'Melaka', region: 'Southern Region' },
+      { name: 'Perlis', region: 'Northern Region' },
+      { name: 'Putrajaya', region: 'Federal Territory' },
+      { name: 'Labuan', region: 'Federal Territory' }
+    ];
+
+    allStates.forEach(state => {
+      groups[state.name] = {
+        region: state.region,
+        zones: [],
+        maxSeverity: 0,
+        activeReports: 0
+      };
+    });
+
+    Object.values(zones).forEach(z => {
+      const zone = z as FloodZone;
+      if (!groups[zone.state]) {
+        groups[zone.state] = { region: zone.region, zones: [], maxSeverity: 0, activeReports: 0 };
+      }
+      groups[zone.state].zones.push(zone);
+      groups[zone.state].maxSeverity = Math.max(groups[zone.state].maxSeverity, zone.severity);
+      if (zone.severity >= 4) {
+        groups[zone.state].activeReports += 1; // Simplified logic for active reports
+      }
+    });
+
+    // Sort states by max severity
+    return Object.entries(groups).sort((a, b) => b[1].maxSeverity - a[1].maxSeverity);
+  }, [zones]);
+
+  const renderStateList = () => (
+    <>
+      <div className="mb-6 flex justify-between items-end">
+        <div>
+          <h2 className="text-3xl font-extrabold text-[#1A202C] mb-1">Malaysia Status</h2>
+          <p className="text-slate-500 text-sm">Real-time flood monitoring across all regions.</p>
+        </div>
+        <button 
+          onClick={handleRefreshLiveData}
+          disabled={isRefreshing}
+          className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${isRefreshing ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-[#6366F1] text-white hover:bg-[#4f46e5] shadow-md'}`}
+        >
+          <span className={`material-icons-round ${isRefreshing ? 'animate-spin' : ''}`}>sync</span>
+        </button>
+      </div>
+
+      {refreshStatus && (
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-100 rounded-xl flex items-center gap-2 text-blue-700 text-sm font-medium animate-[fadeIn_0.3s_ease-out]">
+          <span className="material-icons-round text-blue-500 text-lg">info</span>
+          {refreshStatus}
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {stateGroups.map(([stateName, data]) => {
+          let borderColor = 'border-l-slate-400';
+          let badgeBg = 'bg-white';
+          let badgeText = 'text-green-600';
+          let badgeIcon = 'check_circle';
+          let badgeLabel = 'CLEAR';
+          let reportText = 'No active alerts';
+
+          if (data.maxSeverity >= 8) {
+            borderColor = 'border-l-[#EF4444]';
+            badgeBg = 'bg-[#EF4444]';
+            badgeText = 'text-white';
+            badgeIcon = 'warning';
+            badgeLabel = 'FLOOD NOW';
+            reportText = `${data.activeReports} active reports`;
+          } else if (data.maxSeverity >= 4) {
+            borderColor = 'border-l-[#F59E0B]';
+            badgeBg = 'bg-[#F59E0B]';
+            badgeText = 'text-white';
+            badgeIcon = 'waves';
+            badgeLabel = 'RISING WATER';
+            reportText = `${data.activeReports} monitoring stations active`;
+          }
+
+          return (
+            <div 
+              key={stateName}
+              onClick={() => setSelectedState(stateName)}
+              className={`bg-[#1A202C] rounded-xl overflow-hidden cursor-pointer hover:bg-[#2D3748] transition-colors border-l-4 ${borderColor}`}
+            >
+              <div className="p-5">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="text-white font-bold text-xl mb-1">{stateName}</h3>
+                    <p className="text-slate-400 text-sm">{data.region}</p>
+                  </div>
+                  <div className={`${badgeBg} ${badgeText} px-3 py-1 rounded-full flex items-center gap-1 shadow-sm`}>
+                    <span className="material-icons-round text-[14px]">{badgeIcon}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider">{badgeLabel}</span>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-3">
+                  {data.maxSeverity >= 4 && (
+                    <div className="flex -space-x-2">
+                      <div className="w-8 h-8 rounded-full bg-blue-500 border-2 border-[#1A202C] flex items-center justify-center z-10">
+                        <span className="material-icons-round text-white text-[14px]">water_drop</span>
+                      </div>
+                      {data.maxSeverity >= 8 && (
+                        <div className="w-8 h-8 rounded-full bg-red-500 border-2 border-[#1A202C] flex items-center justify-center z-0">
+                          <span className="material-icons-round text-white text-[14px]">error</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <p className="text-slate-300 text-sm">{reportText}</p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+
+  const renderFormattedAnalysis = (text: string) => {
+    if (!text) return null;
+    
+    // If it's a very short single sentence, just render it normally
+    if (text.length < 30 && !text.includes('.')) {
+      return <p className="text-sm text-slate-600 mb-4">{text}</p>;
+    }
+
+    // Split by sentences, keeping the punctuation
+    const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+    
+    return (
+      <div className="space-y-2 mb-4 mt-2">
+        {sentences.map((sentence, idx) => {
+          const cleanSentence = sentence.trim();
+          if (!cleanSentence) return null;
+          
+          let icon = 'info';
+          let color = 'text-blue-500';
+          let bgColor = 'bg-blue-50';
+          
+          const lower = cleanSentence.toLowerCase();
+          if (/\b(rain|storm|weather|downpour|shower|showers)\b/.test(lower)) {
+            icon = 'water_drop';
+            color = 'text-sky-500';
+            bgColor = 'bg-sky-50';
+          } else if (/\b(cctv|traffic|road|roads|highway|expressway)\b/.test(lower)) {
+            icon = 'traffic';
+            color = 'text-amber-500';
+            bgColor = 'bg-amber-50';
+          } else if (/\b(risk|warning|alert|vigilant|evacuate|evacuation|critical|danger)\b/.test(lower)) {
+            icon = 'warning';
+            color = 'text-red-500';
+            bgColor = 'bg-red-50';
+          } else if (/\b(stable|clear|normal|normally|no major|safe)\b/.test(lower)) {
+            icon = 'check_circle';
+            color = 'text-emerald-500';
+            bgColor = 'bg-emerald-50';
+          }
+
+          return (
+            <div key={idx} className="flex items-start gap-2">
+              <div className={`mt-0.5 w-6 h-6 rounded-md ${bgColor} shrink-0 flex items-center justify-center overflow-hidden`}>
+                <span className={`material-icons-round text-[14px] ${color}`}>{icon}</span>
+              </div>
+              <p className="text-sm text-slate-700 leading-snug flex-1">{cleanSentence}</p>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderLocationList = () => {
+    if (!selectedState) return null;
+    
+    const stateData = stateGroups.find(g => g[0] === selectedState)?.[1];
+    const stateZones = stateData?.zones.sort((a, b) => b.severity - a.severity) || [];
+
+    return (
+      <>
+        <div className="mb-6 flex justify-between items-end">
+          <div>
+            <h2 className="text-2xl font-bold text-[#1A202C] mb-1">{selectedState} Locations</h2>
+            <p className="text-slate-500 text-sm">Select a location to view detailed analysis.</p>
+          </div>
+          <button 
+            onClick={handleRefreshLiveData}
+            disabled={isRefreshing}
+            className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${isRefreshing ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-[#6366F1] text-white hover:bg-[#4f46e5] shadow-md'}`}
+          >
+            <span className={`material-icons-round ${isRefreshing ? 'animate-spin' : ''}`}>sync</span>
+          </button>
+        </div>
+
+        {refreshStatus && (
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-100 rounded-xl flex items-center gap-2 text-blue-700 text-sm font-medium animate-[fadeIn_0.3s_ease-out]">
+            <span className="material-icons-round text-blue-500 text-lg">info</span>
+            {refreshStatus}
+          </div>
+        )}
+
+        {stateZones.length === 0 ? (
+          <div className="bg-white rounded-2xl p-8 text-center border border-slate-100 shadow-sm">
+            <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="material-icons-round text-green-500 text-3xl">check_circle</span>
+            </div>
+            <h3 className="text-lg font-bold text-slate-800 mb-2">All Clear</h3>
+            <p className="text-slate-500 text-sm">No active flood warnings or reports for any location in {selectedState}.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {stateZones.map((zone) => {
+              let headerBgColor = 'bg-slate-100';
+              let headerBorderColor = 'border-slate-200';
+              let headerTextColor = 'text-slate-600';
+              let headerText = 'Maintenance Notice';
+
+              let isLiveUpdate = zone.id.startsWith('live_');
+              
+              if (zone.severity >= 8) {
+                headerBgColor = 'bg-[#EF4444]/10';
+                headerBorderColor = 'border-[#EF4444]/20';
+                headerTextColor = 'text-[#EF4444]';
+                headerText = isLiveUpdate ? 'LIVE UPDATE - FLOOD NOW' : 'FLOOD NOW';
+              } else if (zone.severity >= 4) {
+                headerBgColor = 'bg-[#F59E0B]/10';
+                headerBorderColor = 'border-[#F59E0B]/20';
+                headerTextColor = 'text-[#F59E0B]';
+                headerText = isLiveUpdate ? 'LIVE UPDATE - FLOOD RISK NEARBY' : 'FLOOD RISK NEARBY';
+              } else {
+                headerBgColor = 'bg-green-50';
+                headerBorderColor = 'border-green-100';
+                headerTextColor = 'text-green-600';
+                headerText = isLiveUpdate ? 'LIVE UPDATE - NORMAL' : 'NORMAL';
+              }
+
+              return (
+                <div 
+                  key={zone.id}
+                  onClick={() => onAlertClick(zone.id)}
+                  className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100 cursor-pointer hover:shadow-md transition-shadow"
+                >
+                  <div className={`${headerBgColor} px-4 py-2 border-b ${headerBorderColor}`}>
+                    <span className={`${headerTextColor} text-xs font-bold uppercase tracking-wider`}>{headerText}</span>
+                  </div>
+                  <div className="p-4">
+                    <div className="flex justify-between items-start mb-1">
+                      <h3 className="font-bold text-lg">{zone.name}</h3>
+                      <span className="text-xs font-medium text-slate-500 mt-1">Level {zone.severity}</span>
+                    </div>
+                    {renderFormattedAnalysis(zone.forecast)}
+                    {(zone.estimatedStartTime || zone.estimatedEndTime) && (
+                      <div className="flex gap-4 mb-4 text-xs text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                        {zone.estimatedStartTime && (
+                          <div>
+                            <span className="font-bold text-slate-700 block mb-0.5">Start ({zone.eventType || 'Event'})</span>
+                            {zone.estimatedStartTime}
+                          </div>
+                        )}
+                        {zone.estimatedEndTime && (
+                          <div>
+                            <span className="font-bold text-slate-700 block mb-0.5">End ({zone.eventType || 'Event'})</span>
+                            {zone.estimatedEndTime}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAlertClick(zone.id);
+                      }}
+                      className="flex items-center text-[#635BFF] font-semibold text-sm hover:underline"
+                    >
+                      View More
+                      <span className="material-icons-outlined text-sm ml-1">arrow_forward</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </>
+    );
+  };
+
+  return (
+    <div className="relative h-full w-full flex flex-col bg-[#F9FAFB]">
+      <StatusBar theme="light" />
+      
+      <header className="px-6 py-4 flex items-center justify-between bg-white border-b border-slate-100">
+        <button 
+          onClick={() => {
+            if (selectedState) {
+              setSelectedState(null);
+            } else {
+              onTabChange('map');
+            }
+          }}
+          className="p-2 -ml-2 hover:bg-slate-100 rounded-full transition-colors flex items-center justify-center"
+        >
+          <span className="material-icons-round text-slate-700">arrow_back</span>
+        </button>
+        <h1 className="text-lg font-bold text-slate-900 tracking-tight">
+          {selectedState ? selectedState : 'Alerts by State'}
+        </h1>
+        <div className="w-10"></div> {/* Spacer for centering */}
+      </header>
+
+      <main className="flex-1 px-6 pt-6 pb-32 overflow-y-auto">
+        {selectedState ? renderLocationList() : renderStateList()}
+
+        {/* Banner */}
+        {!selectedState && (
+          <div 
+            onClick={onScanClick}
+            className="bg-[#635BFF]/5 rounded-2xl p-4 border border-[#635BFF]/20 flex items-center space-x-4 mt-8 cursor-pointer hover:bg-[#635BFF]/10 transition-colors"
+          >
+            <div className="bg-[#635BFF] text-white p-3 rounded-full flex items-center justify-center">
+              <span className="material-icons-outlined">forum</span>
+            </div>
+            <div className="flex-1">
+              <h4 className="font-bold text-sm">Join Our Community Discord</h4>
+              <p className="text-xs text-slate-600">Share flood updates & connect with locals on Discord.</p>
+            </div>
+            <button className="material-icons-outlined text-slate-400">chevron_right</button>
+          </div>
+        )}
+      </main>
+
+      <BottomNav activeTab="alert" onTabChange={onTabChange} />
+    </div>
+  );
+}
