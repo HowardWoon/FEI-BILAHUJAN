@@ -1,5 +1,7 @@
 <div align="center">
 
+<br>
+
 ```
 ██████╗ ██╗██╗      █████╗ ██╗  ██╗██╗   ██╗     ██╗ █████╗ ███╗   ██╗
 ██╔══██╗██║██║     ██╔══██╗██║  ██║██║   ██║     ██║██╔══██╗████╗  ██║
@@ -9,18 +11,19 @@
 ╚═════╝ ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝  ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝
 ```
 
-### 🌧️ *When the rain comes, intelligence answers.*
-
 **AI-Powered Hyper-Local Flood Triage & Community Resilience Platform**
 
-[![Live Demo](https://img.shields.io/badge/🚀_LIVE_DEMO-bilahujan--app.web.app-6B59D3?style=for-the-badge)](https://bilahujan-app.web.app)
-[![KitaHack](https://img.shields.io/badge/🏆_KitaHack-2026-FF6B35?style=for-the-badge)](#)
-[![Gemini](https://img.shields.io/badge/Gemini-2.0_Flash-4285F4?style=for-the-badge&logo=google)](#)
-[![Firebase](https://img.shields.io/badge/Firebase-Powered-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)](#)
-[![React](https://img.shields.io/badge/React-18_+_TypeScript-61DAFB?style=for-the-badge&logo=react&logoColor=black)](#)
+<br>
 
-> 🔴 **[CLICK TO TEST LIVE →](https://bilahujan-app.web.app)**
-> *Built for KitaHack 2026 · Powered by Google Gemini 2.0 Flash · Firebase · Google Maps Platform*
+### *"When the rain comes, intelligence answers."*
+
+<br>
+
+**🔴 [TEST THE LIVE PLATFORM → bilahujan-app.web.app](https://bilahujan-app.web.app)**
+
+*Built for KitaHack 2026 · Powered by Google Gemini 2.0 Flash · Firebase · Google Maps Platform*
+
+<br>
 
 </div>
 
@@ -102,7 +105,7 @@ WITHOUT BILAHUJAN                        WITH BILAHUJAN
 ⏳ 30–120 min response gap          →    ⚡ Instant structured dispatch
 ```
 
-BILAHUJAN is not just another flood app. It is the **only system** that combines AI vision verification, structured data collection, real-time spatial mapping, live weather intelligence, and evacuation routing in a single, publicly deployed civic platform.
+BILAHUJAN is the **only system** that combines AI vision verification, structured data collection, real-time spatial mapping, live weather intelligence, and evacuation routing in a single, publicly deployed civic platform.
 
 ---
 
@@ -229,9 +232,9 @@ What makes this Gemini integration different from standard AI implementations:
 
 - Forces exactly one of **10 calibrated severity levels** — never a free-form opinion
 - Anchors all depth estimates to **named real-world reference objects** visible in the image
-- Requires **ISO 8601 timestamps** for event start and end — "Unknown" is explicitly forbidden in the prompt
+- Requires **ISO 8601 timestamps** for event start and end — "Unknown" is explicitly forbidden
 - Enforces **hard score minimums** (car roof submerged = minimum score 8; full submersion = minimum score 9)
-- Uses `responseSchema` via @google/genai — all **16 output fields** are machine-validated types
+- Uses `responseSchema` — all **16 output fields** are machine-validated types, not strings to parse
 - Mandates **image rejection** (`isRelevant: false`) for selfies, food, screenshots, or any non-flood content
 - Self-regulates `aiConfidence` downward when image quality or reference visibility is poor
 
@@ -294,7 +297,7 @@ Rejection        │
 | Geocoder accepting invalid inputs | Google finds fuzzy matches for random strings | 3-layer validation: Malaysia keyword + geographic bounds + real place-type filter |
 | Map zones invisible at country view | Polygon paths drawn at ~0.05° radius — invisible at zoom 6 | State-level Circle overlays sized to actual state area |
 | Evacuation centres hardcoded | Original design used a static address regardless of flood zone | Live Places API `nearbySearch` recalculated per zone with Haversine distance sorting |
-| Camera back button returning to wrong screen | `onBack` hardcoded to navigate to Map regardless of origin | `cameraOrigin` state tracks which screen opened the camera; returns to correct screen |
+| Camera back button returning wrong screen | `onBack` hardcoded to Map regardless of origin | `cameraOrigin` state tracks which screen opened camera; returns to correct screen |
 | Gemini model name invalid | Model referenced as `gemini-3-flash-preview` which does not exist | Corrected to `gemini-2.0-flash` across all three API call sites |
 
 ---
@@ -310,12 +313,10 @@ cd bilahujan
 
 # Install dependencies
 npm install
-
-# Configure environment variables
-cp .env.example .env
 ```
 
-Add your keys to `.env`:
+Create a `.env` file in the project root:
+
 ```env
 GEMINI_API_KEY=your_gemini_api_key
 VITE_GOOGLE_MAPS_API_KEY=your_google_maps_key
@@ -408,17 +409,24 @@ Every citizen report simultaneously:
 
 <div align="center">
 
+<br>
+
 **SDG 11** · Sustainable Cities &nbsp;|&nbsp; **SDG 13** · Climate Action &nbsp;|&nbsp; **SDG 17** · Partnerships
 
----
+<br>
 
 *BILAHUJAN is dedicated to every Malaysian family that has lost property, safety, or loved ones to floodwater —*
+
 *and to the emergency responders who work through the storm to reach them.*
 
----
+<br>
 
 **© 2026 FEI Team · Built for KitaHack 2026**
 
-[![Live Demo](https://img.shields.io/badge/🌐_Test_Live_Now-bilahujan--app.web.app-6B59D3?style=for-the-badge)](https://bilahujan-app.web.app)
+<br>
+
+**[🌐 bilahujan-app.web.app](https://bilahujan-app.web.app)**
+
+<br>
 
 </div>
