@@ -231,7 +231,46 @@ npm run deploy:watch
 
 ---
 
-## 9) Hackathon Context & Acknowledgements
+---
+> ## ⭐ Extra — Additional Highlights
+> *The following sections go beyond the required scope and demonstrate further depth, innovation, and real-world viability.*
+---
+
+## 9) Data Monetization & Commercial Strategy
+
+BILAHUJAN is not just a disaster response tool — it is also a **real-time hyper-local flood intelligence platform** with a clear commercial revenue model.
+
+### 💰 Data as a Product
+
+All flood data collected through BILAHUJAN is **fully anonymized** and **privacy-compliant** (users are informed via the Data Collection Notice on every app load). This anonymized dataset is a highly valuable commercial asset.
+
+| Buyer | What They Get | Why They Pay |
+|---|---|---|
+| **Insurance Companies** | Flood risk scores by location, historical incident frequency | Accurate risk pricing for property & vehicle insurance policies |
+| **Property Developers** | Flood zone heatmaps, drainage performance data | Site selection, risk disclosure, infrastructure planning |
+| **Urban Planners & Local Councils** | Drainage efficiency scores, critical flood zones, historical trends | Infrastructure investment prioritization |
+| **Government Agencies (JPS, NADMA, APM)** | Real-time flood intelligence, time-series data, CSV/JSON exports | Emergency preparedness and resource allocation |
+| **Academic & Research Institutions** | Raw anonymized datasets for climate and hydrology research | Publication-quality data without expensive sensor networks |
+
+### 📊 Built-In Analytics Infrastructure
+
+The platform already includes a full **Government & Corporate Dashboard** with:
+- Aggregated flood statistics by date range
+- Location-based risk analytics
+- Infrastructure and drainage efficiency insights
+- One-click **CSV and JSON data exports** ready for Excel, GIS tools, or API integration
+
+> This means BILAHUJAN can **generate recurring revenue** by licensing its continuously growing flood dataset to corporate and government clients — while simultaneously improving disaster response for the public.
+
+### 🔄 Dual-Purpose Data Loop
+
+> Citizen reports → AI verification → Anonymized storage → **Commercial data product** + **Public safety tool**
+
+Every report submitted strengthens both the public safety mission and the commercial data asset simultaneously — creating a self-reinforcing value loop.
+
+---
+
+## 10) Hackathon Context & Acknowledgements
 
 ### 🏆 Hackathon Context
 This project was built in an intense, time-limited environment for **KitaHack 2026**. All features, design, and code were developed with a focus on rapid prototyping, real-world deployability, and maximum impact for disaster resilience in Malaysia. The constraints of the hackathon inspired creative solutions, fast iteration, and a relentless focus on user needs.
