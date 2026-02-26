@@ -150,6 +150,29 @@ Data Capture → AI Verification → Cloud Sync → Synthesis → Deployment
 
 ---
 
+#### 🚦 Example Workflow: Real-Time Flood Report to Action
+
+1. **User Submits Report:**
+   - User uploads a photo and description via the BILAHUJAN web app.
+2. **AI Verification:**
+   - Gemini Vision analyzes the image for water depth, flow, and hazards.
+   - NLP engine extracts urgency and context from the user's text.
+   - System cross-validates image and text for consistency.
+3. **Severity Auto-Correction:**
+   - If user under- or over-reports severity, AI adjusts the risk score based on objective evidence.
+4. **Cloud Sync:**
+   - Validated, structured report is pushed to Firebase Realtime Database and Firestore.
+5. **Live Map & Alerts:**
+   - All users see updated flood zones and risk levels instantly on the map.
+   - If a critical threshold is reached, a notification is broadcast to nearby users.
+6. **Government Dashboard:**
+   - Emergency responders view only AI-verified, standardized intelligence.
+   - Enables rapid, data-driven decision-making and resource allocation.
+
+> This workflow ensures that every report is transformed from raw, subjective input into actionable, reliable intelligence—closing the loop from citizen to government action in real time.
+
+---
+
 ## 6) Challenges Faced
 
 | Challenge | Solution |
