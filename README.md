@@ -10,7 +10,9 @@
 
 ---
 
-## 1) Repository Overview and Team Introduction
+## 1) REPOSITORY OVERVIEW AND TEAM INTRODUCTION
+
+---
 
 BILAHUJAN is an intelligent disaster response **web application** built for **KitaHack 2026**, designed to operate at the critical intersection between civilians, AI, and emergency services. The platform directly addresses the weakest link in disaster response systems: **unstructured human reporting under panic conditions.**
 
@@ -20,7 +22,7 @@ By embedding intelligence at the edge — the user's device combined with an AI 
 
 ---
 
-### Meet the Team
+### MEET THE TEAM
 
 BILAHUJAN is built by a four-person multidisciplinary team competing in **KitaHack 2026**, each member contributing a distinct domain of expertise to deliver a production-grade civic technology platform.
 
@@ -54,9 +56,11 @@ Owns the technical documentation suite and presentation deck for BILAHUJAN. Resp
 
 ---
 
-## 2) Project Overview
+## 2) PROJECT OVERVIEW
 
-### The Problem — Grounded in Real Data
+---
+
+### THE PROBLEM — GROUNDED IN REAL DATA
 
 Malaysia is one of Southeast Asia's most flood-prone nations. The scale of the problem is not hypothetical:
 
@@ -83,7 +87,7 @@ During rapid-onset flash floods, emergency response systems suffer from four str
 
 ---
 
-### Why Existing Solutions Are Not Enough
+### WHY EXISTING SOLUTIONS ARE NOT ENOUGH
 
 BILAHUJAN is not building in a vacuum. Existing tools have well-documented limitations:
 
@@ -99,7 +103,7 @@ BILAHUJAN is not building in a vacuum. Existing tools have well-documented limit
 
 ---
 
-### SDG Alignment
+### SDG ALIGNMENT
 
 | SDG | Goal | BILAHUJAN's Contribution |
 |---|---|---|
@@ -109,15 +113,17 @@ BILAHUJAN is not building in a vacuum. Existing tools have well-documented limit
 
 ---
 
-### Solution in One Sentence
+### SOLUTION IN ONE SENTENCE
 
 > BILAHUJAN intercepts subjective panic reports, verifies them with Gemini AI vision, restructures the data into standardized machine-readable intelligence, and delivers it to emergency responders in real time — across all 16 Malaysian states.
 
 ---
 
-## 3) Key Features
+## 3) KEY FEATURES
 
-### 1. FloodVision Auto-Verification — Multi-Modal AI Analysis
+---
+
+### 1. FLOODVISION AUTO-VERIFICATION — Multi-Modal AI Analysis
 
 The engine of BILAHUJAN is a **proprietary 10-level severity calibration rubric** embedded directly into the Gemini prompt. This prevents the AI from defaulting to generic responses by anchoring every depth estimate to physical objects visible in the image:
 
@@ -159,19 +165,19 @@ For every image, Gemini returns **16 validated structured fields** enforced by a
 
 ---
 
-### 2. Audio Environment Risk Scanning
+### 2. AUDIO ENVIRONMENT RISK SCANNING
 
 Beyond images, BILAHUJAN supports **ambient audio analysis** — the user records surrounding sound and Gemini classifies the environmental threat level. Heavy rain, rushing water, thunder, and emergency sirens are automatically identified as flood risk signals. This provides an input channel for users who cannot photograph the scene safely.
 
 ---
 
-### 3. Live Weather Intelligence via Google Search Grounding
+### 3. LIVE WEATHER INTELLIGENCE VIA GOOGLE SEARCH GROUNDING
 
 The Alert Menu includes a **Live Refresh** system that calls Gemini with Google Search grounding enabled — pulling real-time weather data, rain alerts, and CCTV traffic reports for all 16 Malaysian states on demand. This creates an always-current intelligence layer that is independent of citizen submissions.
 
 ---
 
-### 4. All 16 States / Territories — Dual-Layer Map
+### 4. ALL 16 STATES / TERRITORIES — DUAL-LAYER MAP
 
 BILAHUJAN ships with **37 pre-seeded flood zones** covering every Malaysian state and federal territory: Johor, Pahang, Kelantan, Terengganu, Perak, Penang, Kedah, Selangor, Negeri Sembilan, Melaka, Perlis, Sabah, Sarawak, Kuala Lumpur, Putrajaya, and Labuan.
 
@@ -182,7 +188,7 @@ Two rendered layers work simultaneously:
 
 ---
 
-### 5. Real-Time Evacuation Centre Discovery
+### 5. REAL-TIME EVACUATION CENTRE DISCOVERY
 
 When a user opens any alert, BILAHUJAN calls **Google Maps Places API (`nearbySearch`)** to find the nearest real, verified evacuation-suitable locations within 10km — targeting community halls (`dewan orang ramai`), public shelters (`balai raya`), and schools. Results are:
 
@@ -194,7 +200,7 @@ When a user opens any alert, BILAHUJAN calls **Google Maps Places API (`nearbySe
 
 ---
 
-### 6. Structured 5-Step Flood Reporting with Mandatory Validation Gate
+### 6. STRUCTURED 5-STEP FLOOD REPORTING WITH MANDATORY VALIDATION GATE
 
 The Report screen guides users through a validated submission flow:
 
@@ -217,7 +223,7 @@ A real-time checklist appears above the button, ticking off each condition as it
 
 ---
 
-### 7. 3-Layer Location Validation (Anti-Noise System)
+### 7. 3-LAYER LOCATION VALIDATION (ANTI-NOISE SYSTEM)
 
 The map search enforces three independent checks before showing any result:
 
@@ -229,7 +235,7 @@ The map search enforces three independent checks before showing any result:
 
 ---
 
-### 8. Government Analytics Dashboard
+### 8. GOVERNMENT ANALYTICS DASHBOARD
 
 A dedicated government-facing dashboard provides:
 
@@ -240,15 +246,17 @@ A dedicated government-facing dashboard provides:
 
 ---
 
-### 9. Real-Time Ambient Flood Alert Notifications
+### 9. REAL-TIME AMBIENT FLOOD ALERT NOTIFICATIONS
 
 A continuous background monitoring loop fires event-based notifications when new zones are published or severity thresholds are crossed. An overlay notification stack appears in real time — users can tap through to full zone detail without abandoning their current screen.
 
 ---
 
-## 4) Technologies Used
+## 4) TECHNOLOGIES USED
 
-### Google Technologies
+---
+
+### GOOGLE TECHNOLOGIES
 
 | Technology | Role in BILAHUJAN |
 |---|---|
@@ -261,7 +269,7 @@ A continuous background monitoring loop fires event-based notifications when new
 | **Firebase Hosting** | Global CDN deployment; zero infrastructure maintenance |
 | **Google Search via Gemini Grounding** | Real-time weather and CCTV traffic intelligence for live state alerts |
 
-### Supporting Stack
+### SUPPORTING STACK
 
 | Tool | Purpose |
 |---|---|
@@ -273,15 +281,17 @@ A continuous background monitoring loop fires event-based notifications when new
 
 ---
 
-## 5) AI Architecture Deep-Dive
+## 5) AI ARCHITECTURE DEEP-DIVE
 
-### Core Design Principle
+---
+
+### CORE DESIGN PRINCIPLE
 
 > Traditional systems collect bad data and try to fix it later.
 > BILAHUJAN **prevents bad data from entering the system.**
 > This is **preventive intelligence architecture**, not reactive processing.
 
-### What Makes This Gemini Integration Different
+### WHAT MAKES THIS GEMINI INTEGRATION DIFFERENT
 
 Standard AI integrations send a simple free-form prompt. BILAHUJAN embeds a **multi-constraint deterministic prompt system** that:
 
@@ -295,7 +305,7 @@ Standard AI integrations send a simple free-form prompt. BILAHUJAN embeds a **mu
 
 This turns Gemini into a **calibrated scientific instrument**, not a conversational assistant.
 
-### End-to-End Data Flow
+### END-TO-END DATA FLOW
 
 ```
 User submits image
@@ -322,7 +332,7 @@ Modal              |
        to Nearby Users
 ```
 
-### From Report to Government Action
+### FROM REPORT TO GOVERNMENT ACTION
 
 | Step | What Happens |
 |---|---|
@@ -337,7 +347,9 @@ Modal              |
 
 ---
 
-## 6) Engineering Challenges and Solutions
+## 6) ENGINEERING CHALLENGES AND SOLUTIONS
+
+---
 
 | Challenge | Root Cause | Solution Implemented |
 |---|---|---|
@@ -353,7 +365,9 @@ Modal              |
 
 ---
 
-## 7) Full Feature Delivery Checklist
+## 7) FULL FEATURE DELIVERY CHECKLIST
+
+---
 
 Every item below is live and testable at **https://bilahujan-app.web.app**
 
@@ -384,11 +398,13 @@ Every item below is live and testable at **https://bilahujan-app.web.app**
 
 ---
 
-## 8) Data Monetization and Commercial Viability
+## 8) DATA MONETIZATION AND COMMERCIAL VIABILITY
+
+---
 
 BILAHUJAN has a concrete commercial strategy that activates as its user base scales.
 
-### Anonymized Flood Intelligence as a Product
+### ANONYMIZED FLOOD INTELLIGENCE AS A PRODUCT
 
 All collected data is **fully anonymized** and **privacy-compliant** — users acknowledge the data collection notice on every app load. The anonymized dataset has direct commercial value:
 
@@ -400,7 +416,7 @@ All collected data is **fully anonymized** and **privacy-compliant** — users a
 | Government Agencies (JPS, NADMA, APM) | Verified real-time intelligence; time-series exports | Emergency preparedness and resource allocation |
 | Academic and Research Institutions | Anonymized datasets for hydrology and climate research | Publication-quality data at a fraction of sensor network cost |
 
-### The Self-Reinforcing Value Loop
+### THE SELF-REINFORCING VALUE LOOP
 
 ```
 Citizen submits flood report
@@ -423,7 +439,9 @@ Every report simultaneously improves public safety AND grows the commercial data
 
 ---
 
-## 9) Future Roadmap
+## 9) FUTURE ROADMAP
+
+---
 
 | Phase | Feature | Technology | Impact |
 |---|---|---|---|
@@ -437,7 +455,9 @@ Every report simultaneously improves public safety AND grows the commercial data
 
 ---
 
-## 10) Installation and Setup
+## 10) INSTALLATION AND SETUP
+
+---
 
 **Prerequisites:**
 - Node.js v18+
@@ -469,7 +489,9 @@ firebase deploy --only hosting
 
 ---
 
-## 11) Acknowledgements
+## 11) ACKNOWLEDGEMENTS
+
+---
 
 BILAHUJAN was built fully within the KitaHack 2026 hackathon window. Every component — the Gemini prompt calibration rubric, the Places API evacuation logic, the dual-layer map architecture, the 3-layer location validator — was conceived, implemented, debugged, and deployed from scratch under hackathon time pressure.
 
