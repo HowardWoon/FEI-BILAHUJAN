@@ -21,7 +21,7 @@
 
 **🔴 [TEST THE LIVE PLATFORM → bilahujan-app.web.app](https://bilahujan-app.web.app)**
 
-*Built for KitaHack 2026 · Powered by Google Gemini 2.0 Flash · Firebase · Google Maps Platform*
+*Built for KitaHack 2026 · Powered by Google Gemini 2.5 Flash · Firebase · Google Maps Platform*
 
 <br>
 
@@ -193,7 +193,7 @@ A continuous background monitoring loop fires event-based notifications when new
 
 | Technology | Role in BILAHUJAN |
 |:---|:---|
-| **Gemini 2.0 Flash** | Multi-modal AI engine: 10-level severity rubric, 16-field JSON schema, audio scanning, live weather via Search grounding |
+| **Gemini 2.5 Flash** | Multi-modal AI engine: 10-level severity rubric, 16-field JSON schema, audio scanning, live weather via Search grounding |
 | **Maps JavaScript API** | Real-time dual-layer flood zone visualization across all of Malaysia |
 | **Places API** | Automatic discovery of nearest verified evacuation centres per alert zone |
 | **Geocoding API** | 3-layer Malaysian location validation (text → coordinates → place type) |
@@ -247,7 +247,7 @@ What makes this Gemini integration different from standard AI implementations:
 📸 User submits image
          │
          ▼
-🤖 Gemini 2.0 Flash Vision
+🤖 Gemini 2.5 Flash Vision
    (16-field validated JSON · 10-level severity rubric)
          │
     ┌────┴────┐
@@ -297,7 +297,7 @@ Rejection        │
 | Map zones invisible at country view | Polygon paths drawn at ~0.05° radius — invisible at zoom 6 | State-level Circle overlays sized to actual state area |
 | Evacuation centres hardcoded | Original design used a static address regardless of flood zone | Live Places API `nearbySearch` recalculated per zone with Haversine distance sorting |
 | Camera back button returning wrong screen | `onBack` hardcoded to Map regardless of origin | `cameraOrigin` state tracks which screen opened camera; returns to correct screen |
-| Gemini model name invalid | Model referenced as `gemini-3-flash-preview` which does not exist | Corrected to `gemini-2.0-flash` across all three API call sites |
+| Gemini model name invalid | Model referenced as `gemini-3-flash-preview` which does not exist | Corrected to `gemini-2.5-flash` across all three API call sites |
 
 ---
 
@@ -354,7 +354,7 @@ firebase deploy --only hosting
 
 | Feature | Status |
 |:---|:---:|
-| Gemini 2.0 Flash multi-modal image analysis | ✅ |
+| Gemini 2.5 Flash multi-modal image analysis | ✅ |
 | 10-level calibrated severity rubric with visual anchors | ✅ |
 | 16-field structured JSON output per analysis | ✅ |
 | Image rejection gate (non-flood images blocked with explanation) | ✅ |
