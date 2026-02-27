@@ -307,12 +307,43 @@ export default function AlertDetailScreen({ zoneId, onBack, onScanClick, onTabCh
           )}
 
           <button
-            onClick={handleNavigation}
+            onClick={() => { handleNavigation(); }}
             disabled={evacLoading}
-            className="w-full bg-[#6366F1] hover:bg-[#4F46E5] disabled:opacity-50 text-white py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors active:scale-95"
+            className="group relative w-full overflow-hidden rounded-2xl text-white font-bold transition-all duration-200 active:scale-[0.97] active:brightness-90 disabled:opacity-50"
+            style={{ WebkitTapHighlightColor: 'transparent' }}
           >
-            <span className="material-symbols-outlined text-lg">navigation</span>
-            {selectedCenter ? `Navigate to ${selectedCenter.name}` : 'Start Navigation'}
+            {/* Background layers */}
+            <div className="absolute inset-0 bg-gradient-to-r from-[#4338CA] via-[#6366F1] to-[#818CF8]" />
+            <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent" />
+            {/* Shimmer */}
+            <span className="pointer-events-none absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+            {/* Glow */}
+            <div className="absolute -inset-1 bg-[#6366F1]/40 blur-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10" />
+
+            {/* Content */}
+            <div className="relative flex items-center justify-between px-5 py-4">
+              {/* Left: pulsing dot + label */}
+              <div className="flex items-center gap-3">
+                <div className="relative w-10 h-10 flex items-center justify-center">
+                  <span className="absolute inset-0 rounded-full bg-white/20 animate-ping" />
+                  <span className="relative w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-xl">navigation</span>
+                  </span>
+                </div>
+                <div className="text-left">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-white/60">Nearest Safe Location</p>
+                  <p className="text-sm font-black leading-tight">
+                    {selectedCenter ? selectedCenter.name : 'Start Navigation'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Right: arrow chip */}
+              <div className="flex items-center gap-1.5 bg-white/15 rounded-full px-3 py-1.5 group-hover:bg-white/25 transition-colors duration-200">
+                <span className="text-xs font-bold">Go</span>
+                <span className="material-symbols-outlined text-base transition-transform duration-300 group-hover:translate-x-0.5">arrow_forward</span>
+              </div>
+            </div>
           </button>
         </div>
       </main>

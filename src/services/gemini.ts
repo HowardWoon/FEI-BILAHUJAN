@@ -1,8 +1,47 @@
 import { GoogleGenAI, Type } from "@google/genai";
+import { ref, get, set } from "firebase/database";
+import { rtdb } from "../firebase";
 
-// Initialize the Gemini API client
-// The API key is automatically injected by the AI Studio environment
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// ─────────────────────────────────────────────────────────────────────────────
+// ⚠️  CRITICAL FIX: Vite requires import.meta.env — NOT process.env
+//     process.env returns undefined in the browser (Vite/React),
+//     which is why every Gemini call silently fails with an auth error.
+//
+//     Your .env file must use: VITE_GEMINI_API_KEY=your_key_here
+// ─────────────────────────────────────────────────────────────────────────────
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY as string;
+
+if (!GEMINI_API_KEY) {
+  console.error(
+    '[Gemini] ❌ VITE_GEMINI_API_KEY is undefined!\n' +
+    'Steps to fix:\n' +
+    '  1. Open your .env file in the project root\n' +
+    '  2. Add: VITE_GEMINI_API_KEY=your_api_key_here\n' +
+    '  3. Stop the dev server (Ctrl+C)\n' +
+    '  4. Run: npm run dev'
+  );
+}
+
+const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+
+// ─── Rate limit: 1 scan per 4 seconds (free tier max = 15 RPM) ───────────────
+let lastCallTime = 0;
+const COOLDOWN_MS = 4000;
+
+// ─── Firebase result cache: 10 minutes TTL ───────────────────────────────────
+const CACHE_TTL_MS = 10 * 60 * 1000;
+
+function hashImageData(base64: string): string {
+  let hash = 5381;
+  const step = Math.max(1, Math.floor(base64.length / 512));
+  for (let i = 0; i < base64.length; i += step) {
+    hash = ((hash << 5) + hash) ^ base64.charCodeAt(i);
+    hash = hash >>> 0;
+  }
+  return `img_${hash}_${base64.length}`;
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface FloodAnalysisResult {
   isRelevant: boolean;
@@ -23,158 +62,6 @@ export interface FloodAnalysisResult {
   eventType: string;
 }
 
-export async function analyzeFloodImage(base64Image: string, mimeType: string): Promise<FloodAnalysisResult> {
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: `You are a flood and drainage condition analysis AI for the BILAHUJAN emergency response platform. Your ONLY purpose is to analyze images related to:
-              - Active flooding (roads, streets, residential areas, fields)
-              - Drainage systems (drains, culverts, monsoon drains — whether flowing normally or blocked/overflowing)
-              - Rivers, streams, or canals that may be at flood risk
-              - Rainfall, stormwater runoff, or waterlogged areas
-
-              STRICT REJECTION RULES — set "isRelevant" to false if the image shows:
-              - People, portraits, selfies
-              - Food, objects, toys, products, animals (unless in a flooded scene)
-              - Indoor scenes with no flood context
-              - Screenshots, documents, charts, maps, UI
-              - Vehicles NOT in a flood scenario
-              - Any scene clearly unrelated to water/flooding/drainage
-
-              If the image does NOT clearly show flooding, water accumulation, or a drainage system, you MUST set "isRelevant" to false and fill "rejectionReason" with a clear, human-friendly explanation.
-
-              ═══════════════════════════════════════════════
-              MANDATORY SEVERITY CALIBRATION RUBRIC
-              You MUST use the exact level below that best matches the image. DO NOT default to Level 3.
-              ═══════════════════════════════════════════════
-              Level 1 | Score 1  | NORMAL   | Completely dry. No water. Drains flowing normally.
-              Level 2 | Score 2  | NORMAL   | Surface dampness or puddles <5cm. Drain at <50% capacity.
-              Level 3 | Score 3  | MINOR    | Light pooling, ankle-deep <0.15m. Drain slightly overflowing. Road markings still visible.
-              Level 4 | Score 4  | MINOR    | Ankle-deep ~0.15–0.2m. Road markings submerged. Motorcycles at risk.
-              Level 5 | Score 5  | MODERATE | Knee-deep ~0.2–0.4m. Water at bottom of car doors. Cars should not proceed.
-              Level 6 | Score 6  | MODERATE | Knee-deep ~0.4–0.5m. Water entering car cabins. Active current visible.
-              Level 7 | Score 7  | SEVERE   | Waist-deep ~0.5–0.8m. Water above car bonnets/hoods. Pedestrians cannot cross safely.
-              Level 8 | Score 8  | SEVERE   | Deep ~0.8–1.2m. Water at car ROOF level. Vehicles partially or fully submerged up to roof.
-              Level 9 | Score 9  | CRITICAL | >1.2m. Vehicles completely submerged. Only roof or top visible. Immediate life threat.
-              Level 10| Score 10 | CRITICAL | Catastrophic. Full submersion. Buildings flooded to 2nd floor. Mass evacuation imperative.
-              ═══════════════════════════════════════════════
-
-              VISUAL REFERENCE CUES — use these to anchor your depth estimate:
-              - Tyre bottom to axle centre = ~0.25m
-              - Car door bottom sill = ~0.3–0.35m
-              - Car door handle = ~0.8–0.9m
-              - Car bonnet/hood top = ~0.9–1.1m
-              - Car roof = ~1.3–1.5m
-              - Standard kerb height = ~0.15m
-              - Adult knee = ~0.5m | waist = ~1.0m | chest = ~1.3m
-
-              IMPORTANT RULES:
-              - DO NOT default to Level 3 or MODERATE unless the image genuinely shows ankle-deep light pooling.
-              - If water is at or above car bonnet level, the minimum score is 7.
-              - If water is at or above car roof level, the minimum score is 8.
-              - If vehicles are fully submerged, the minimum score is 9.
-              - Be honest. Underreporting severity may cost lives.
-              - Lower aiConfidence if reference objects are unclear or image quality is poor.
-
-              The current time is ${new Date().toISOString()}.
-              Return ONLY a valid JSON object with this exact structure:
-              {
-                "isRelevant": <boolean>,
-                "rejectionReason": "<Empty string if relevant. If not relevant, a clear user-facing message explaining why the image was rejected and what to upload instead.>",
-                "estimatedDepth": "<e.g., ~1.2m (at car roof level) — be precise using visual references above>",
-                "detectedHazards": "<Comma-separated list, e.g., Submerged manhole covers, Fast-moving current, Floating debris, Live electrical cables, or 'None visible'>",
-                "passability": "<Separate assessments — Pedestrians: [status] | Motorcycles: [status] | Cars: [status] | 4x4: [status]>",
-                "aiConfidence": <number 0-100 — be conservative. Lower if depth is hard to judge.>,
-                "directive": "<A direct, honest survival directive. State the water level clearly. E.g.: 'Water is at car roof level (~1.3m). This is a life-threatening flood. Do NOT enter the water. Evacuate immediately to the nearest high ground or multi-storey building.'>",
-                "riskScore": <integer 1-10 strictly from the calibration rubric above>,
-                "severity": "<NORMAL | MINOR | MODERATE | SEVERE | CRITICAL — must match the calibration rubric>",
-                "waterDepth": "<Dry | Ankle-Deep (<0.2m) | Knee-Deep (0.2–0.5m) | Waist-Deep (0.5–1m) | Roof-Level (1–1.5m) | Full Submersion (>1.5m) | Not applicable (drain only)>",
-                "waterCurrent": "<Stagnant | Slow-moving | Moderate current | Fast-moving | Rapid and dangerous>",
-                "infrastructureStatus": "<e.g., Roads submerged, drains overflowing, power lines at risk, or Normal>",
-                "humanRisk": "<e.g., Life-threatening — water at vehicle roof level / Pedestrian drowning risk / None visible>",
-                "eventType": "<Flash Flood | Monsoon Flood | Drain Overflow | Waterlogging | Drain Inspection (normal) | Normal>",
-                "estimatedStartTime": "<ISO 8601 format or 'Already in progress'>",
-                "estimatedEndTime": "<ISO 8601 format — estimate based on severity and typical Malaysian weather patterns. Do NOT write 'Unknown'.>"
-              }`
-            },
-            {
-              inlineData: {
-                data: base64Image,
-                mimeType: mimeType,
-              }
-            }
-          ]
-        }
-      ],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            isRelevant: { type: Type.BOOLEAN },
-            rejectionReason: { type: Type.STRING },
-            estimatedDepth: { type: Type.STRING },
-            detectedHazards: { type: Type.STRING },
-            passability: { type: Type.STRING },
-            aiConfidence: { type: Type.INTEGER },
-            directive: { type: Type.STRING },
-            riskScore: { type: Type.INTEGER },
-            severity: { type: Type.STRING },
-            waterDepth: { type: Type.STRING },
-            waterCurrent: { type: Type.STRING },
-            infrastructureStatus: { type: Type.STRING },
-            humanRisk: { type: Type.STRING },
-            eventType: { type: Type.STRING },
-            estimatedStartTime: { type: Type.STRING },
-            estimatedEndTime: { type: Type.STRING }
-          },
-          required: ["isRelevant", "rejectionReason", "estimatedDepth", "detectedHazards", "passability", "aiConfidence", "directive", "riskScore", "severity", "waterDepth", "waterCurrent", "infrastructureStatus", "humanRisk", "eventType", "estimatedStartTime", "estimatedEndTime"]
-        }
-      }
-    });
-
-    if (response.text) {
-      // Strip markdown code fences if the model wraps the JSON
-      const cleaned = response.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-      const parsed = JSON.parse(cleaned) as FloodAnalysisResult;
-
-      // Safety net: if the model returns isRelevant=true but the directive
-      // is suspiciously generic (fallback-like), trust the model's own fields.
-      // No override needed — just return the real parsed result.
-      return parsed;
-    }
-    throw new Error("Empty response from Gemini API. Please try again.");
-  } catch (error: any) {
-    // Re-throw so CameraScreen can display a real error message.
-    // NEVER silently return fake flood data — that would bypass the AI gate entirely.
-    console.error("Gemini analyzeFloodImage failed:", error);
-    const msg = error?.message || '';
-    const status = error?.status || error?.code || 0;
-    if (msg.includes('timed out')) throw new Error(msg);
-    if (status === 429 || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota') || msg.includes('429') || msg.includes('free_tier')) {
-      throw new Error('AI quota exceeded. Your free-tier Gemini API limit has been reached. Please wait a moment and try again, or enable billing at ai.google.dev.');
-    }
-    if (msg.includes('API_KEY') || msg.includes('API key') || msg.includes('401') || msg.includes('API_KEY_INVALID')) {
-      throw new Error('API key error. Please check your Gemini API key configuration.');
-    }
-    if (msg.includes('404') || msg.includes('not found')) {
-      throw new Error('AI model unavailable. Please try again in a moment.');
-    }
-    throw new Error('AI analysis failed. Please check your connection and try again with a clear flood or drain image.');
-  }
-}
-
-export interface AudioAnalysisResult {
-  isFloodRisk: boolean;
-  severity: string;
-  analysis: string;
-}
-
 export interface LiveWeatherAnalysis {
   state: string;
   weatherCondition: string;
@@ -184,90 +71,256 @@ export interface LiveWeatherAnalysis {
   aiAnalysisText: string;
 }
 
-export async function fetchLiveWeatherAndCCTV(state: string, retries = 2): Promise<LiveWeatherAnalysis> {
+export interface AudioAnalysisResult {
+  isFloodRisk: boolean;
+  severity: string;
+  analysis: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// analyzeFloodImage
+// Model: gemini-2.0-flash  (REST fetch — SDK hangs silently in browser)
+// Strategy: Firebase cache first → REST API → save result to cache
+// ─────────────────────────────────────────────────────────────────────────────
+export async function analyzeFloodImage(
+  base64Image: string,
+  mimeType: string
+): Promise<FloodAnalysisResult> {
+
+  // ── Guard: API key ──────────────────────────────────────────────────────────
+  if (!GEMINI_API_KEY) {
+    throw new Error(
+      'Gemini API key missing. Add VITE_GEMINI_API_KEY=your_key to your .env file and restart the dev server.'
+    );
+  }
+
+  // ── Guard: cooldown ─────────────────────────────────────────────────────────
+  const now = Date.now();
+  if (now - lastCallTime < COOLDOWN_MS) {
+    const wait = Math.ceil((COOLDOWN_MS - (now - lastCallTime)) / 1000);
+    throw new Error(`Please wait ${wait} second${wait !== 1 ? 's' : ''} before scanning again.`);
+  }
+  lastCallTime = now;
+
+  // ── Firebase cache (3s timeout, non-blocking) ───────────────────────────────
+  const cacheKey = hashImageData(base64Image);
+  try {
+    const snap = await Promise.race([
+      get(ref(rtdb, `analysisCache/${cacheKey}`)),
+      new Promise<null>(res => setTimeout(() => res(null), 3000))
+    ]);
+    if (snap && (snap as any).exists?.()) {
+      const cached = (snap as any).val();
+      if (now - cached.timestamp < CACHE_TTL_MS) {
+        console.log('[Gemini] ✅ Cache hit — no API call needed');
+        return cached.result as FloodAnalysisResult;
+      }
+    }
+  } catch { /* cache miss is fine */ }
+
+  // ── Prompt ──────────────────────────────────────────────────────────────────
+  const prompt = `You are a Malaysian flood risk AI analyst. Analyze this image.
+
+STEP 1: Is this image showing flood, water, or drainage conditions?
+- If NO (selfie, food, text document, indoor room, clear sky, etc):
+  Return isRelevant=false and explain in rejectionReason.
+
+STEP 2: If YES, use these physical references to estimate depth:
+  Kerb = 0.15m | Door sill = 0.30m | Ankle = 0.15m | Knee = 0.50m
+  Waist = 1.0m  | Car bonnet = 1.0m | Car roof = 1.4m
+
+SEVERITY (riskScore):
+  1-2 = NORMAL (dry/damp)   3-4 = MINOR (ankle)   5-6 = MODERATE (knee)
+  7-8 = SEVERE (waist/bonnet)   9-10 = CRITICAL (roof/2nd floor)
+
+HARD RULES — never go below these:
+  Car bonnet submerged → riskScore minimum 7
+  Car roof submerged   → riskScore minimum 8
+  Car fully submerged  → riskScore minimum 9
+
+Return ONLY this JSON. No markdown, no code fences, no explanation:
+{"isRelevant":true,"rejectionReason":"","estimatedDepth":"~0.3m","detectedHazards":"Submerged manholes, debris","passability":"Pedestrians:Caution|Motorcycles:Avoid|Cars:Avoid|4x4:Caution","aiConfidence":80,"directive":"Water is knee-deep. Avoid crossing. Move to higher ground.","riskScore":5,"severity":"MODERATE","waterDepth":"Knee-Deep (0.3-0.5m)","waterCurrent":"Slow","infrastructureStatus":"Roads partially submerged","humanRisk":"Moderate","eventType":"Flash Flood","estimatedStartTime":"Already in progress","estimatedEndTime":"${new Date(Date.now() + 7200000).toISOString()}"}`;
+
+  // ── REST API call (most reliable for browser + image upload) ────────────────
+  const REST_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+  const body = {
+    contents: [{
+      parts: [
+        { text: prompt },
+        { inline_data: { mime_type: mimeType, data: base64Image } }
+      ]
+    }],
+    generationConfig: {
+      temperature: 0.1,     // deterministic → consistent JSON output
+      maxOutputTokens: 400, // our JSON needs ~300 tokens max
+      topP: 0.8,
+      topK: 10
+    }
+  };
+
+  // 30s abort controller
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+
+  let response: Response;
+  try {
+    response = await fetch(REST_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+  } catch (err: any) {
+    clearTimeout(timer);
+    if (err?.name === 'AbortError') {
+      throw new Error('Request timed out. Try a smaller/clearer image and tap Retry.');
+    }
+    throw new Error('Network error. Check your internet connection and tap Retry.');
+  }
+  clearTimeout(timer);
+
+  // ── HTTP error handling ─────────────────────────────────────────────────────
+  if (!response.ok) {
+    let errMsg = response.statusText;
+    try {
+      const errJson = await response.json();
+      errMsg = (errJson as any)?.error?.message || errMsg;
+    } catch { /* ignore */ }
+
+    if (response.status === 429) {
+      throw new Error('Quota exceeded. Wait 60 seconds and tap Retry.\nOr enable billing at aistudio.google.com for unlimited usage.');
+    }
+    if (response.status === 400 && errMsg.toLowerCase().includes('api key')) {
+      throw new Error('Invalid API key. Check VITE_GEMINI_API_KEY in your .env file.');
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('API key rejected. Verify it is active at aistudio.google.com/apikey');
+    }
+    throw new Error(`Gemini error (${response.status}): ${errMsg}`);
+  }
+
+  // ── Parse JSON from response ────────────────────────────────────────────────
+  const json = await response.json();
+  const rawText: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+
+  if (!rawText) {
+    const blockReason = json?.promptFeedback?.blockReason;
+    if (blockReason) throw new Error(`Image blocked: ${blockReason}. Try a different image.`);
+    throw new Error('Empty AI response. Tap Retry.');
+  }
+
+  const match = rawText.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('Could not read AI response. Tap Retry.');
+
+  const parsed = JSON.parse(match[0]) as FloodAnalysisResult;
+
+  // ── Save to cache (fire-and-forget) ────────────────────────────────────────
+  set(ref(rtdb, `analysisCache/${cacheKey}`), {
+    result: parsed,
+    timestamp: Date.now()
+  }).catch(() => { /* non-fatal */ });
+
+  return parsed;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// fetchLiveWeatherAndCCTV
+// Alert Menu: live weather + flood alerts per Malaysian state
+// Uses Gemini 2.0 Flash with Google Search grounding
+// ─────────────────────────────────────────────────────────────────────────────
+export async function fetchLiveWeatherAndCCTV(
+  state: string,
+  retries = 2
+): Promise<LiveWeatherAnalysis> {
+
+  const fallback: LiveWeatherAnalysis = {
+    state,
+    weatherCondition: "Cloudy",
+    isRaining: false,
+    floodRisk: "Low",
+    severity: 1,
+    aiAnalysisText: `Live weather data temporarily unavailable for ${state}. Check local news for updates.`
+  };
+
+  if (!GEMINI_API_KEY) return fallback;
+
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: `Search for the current real-time weather in ${state}, Malaysia. Also, search for any recent flood warnings, heavy rain alerts, or traffic CCTV reports regarding flooding in the whole state of ${state}. 
-      Based on the real-time search results, determine if it is currently raining, the flood risk, and provide a short AI analysis.
-      Return ONLY a valid JSON object with this exact structure (no markdown, no code fences):
-      {"state":"${state}","weatherCondition":"<e.g., Heavy Rain, Cloudy, Sunny, Thunderstorm>","isRaining":<true|false>,"floodRisk":"<High|Moderate|Low>","severity":<1-10>,"aiAnalysisText":"<short actionable analysis>"}`,
+      model: "gemini-2.0-flash",
+      contents: `Search for the CURRENT real-time weather in ${state}, Malaysia right now.
+Also search for any active flood warnings, heavy rain alerts, or CCTV traffic flood reports for ${state} Malaysia today.
+
+Based on live search results respond ONLY with this JSON (no markdown, no code fences):
+{"state":"${state}","weatherCondition":"<Heavy Rain|Thunderstorm|Drizzle|Cloudy|Sunny>","isRaining":<true|false>,"floodRisk":"<High|Moderate|Low>","severity":<1-10>,"aiAnalysisText":"<2 short actionable sentences for residents>"}`,
       config: {
         tools: [{ googleSearch: {} }],
+        temperature: 0.1,
+        maxOutputTokens: 200
       }
     });
 
-    if (response.text) {
-      // Strip markdown code fences if present
-      const cleaned = response.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-      // Extract JSON object from the response
-      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]) as LiveWeatherAnalysis;
-      }
-      throw new Error("Could not parse JSON from Gemini response");
-    }
-    throw new Error("Empty response from Gemini");
-  } catch (error: any) {
-    const msg = error?.message || '';
-    const status = error?.status || error?.code || 0;
-    if (status === 429 || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota') || msg.includes('429') || msg.includes('free_tier')) {
-      console.warn(`Rate limit exceeded for ${state}. Using fallback data.`);
-      return {
-        state,
-        weatherCondition: "Cloudy",
-        isRaining: false,
-        floodRisk: "Low",
-        severity: 1,
-        aiAnalysisText: `Current weather in ${state} appears stable. No immediate flood risks detected based on available data.`
-      };
-    }
+    const raw = response.text?.trim() ?? '';
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('No JSON found in weather response');
 
+    return JSON.parse(jsonMatch[0]) as LiveWeatherAnalysis;
+
+  } catch (error: any) {
+    const msg = error?.message ?? '';
+    const status = error?.status ?? error?.code ?? 0;
+
+    if (status === 429 || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota') || msg.includes('free_tier')) {
+      console.warn(`[Weather] Rate limit hit for ${state} — using fallback`);
+      return fallback;
+    }
     if (retries > 0) {
-      console.warn(`Retrying fetchLiveWeatherAndCCTV for ${state}. Retries left: ${retries - 1}`);
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s before retry
+      console.warn(`[Weather] Retrying ${state}, attempts left: ${retries - 1}`);
+      await new Promise(r => setTimeout(r, 2000));
       return fetchLiveWeatherAndCCTV(state, retries - 1);
     }
-    console.error(`Error fetching live weather for ${state}:`, error);
-    // Fallback if search fails after retries
-    return {
-      state,
-      weatherCondition: "Cloudy",
-      isRaining: false,
-      floodRisk: "Low",
-      severity: 1,
-      aiAnalysisText: `Current weather in ${state} appears stable. No immediate flood risks detected based on available data.`
-    };
+    console.error(`[Weather] All retries failed for ${state}:`, error);
+    return fallback;
   }
 }
 
-export async function analyzeAudio(base64Audio: string, mimeType: string): Promise<AudioAnalysisResult> {
+// ─────────────────────────────────────────────────────────────────────────────
+// analyzeAudio
+// Detects flood risk from ambient sound (rain, rushing water, sirens, thunder)
+// ─────────────────────────────────────────────────────────────────────────────
+export async function analyzeAudio(
+  base64Audio: string,
+  mimeType: string
+): Promise<AudioAnalysisResult> {
+
+  const fallback: AudioAnalysisResult = {
+    isFloodRisk: false,
+    severity: 'NONE',
+    analysis: 'Audio analysis unavailable. Please try again later.'
+  };
+
+  if (!GEMINI_API_KEY) return fallback;
+
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       contents: [
         {
           role: "user",
           parts: [
             {
-              text: `Analyze this audio recording of the environment. Determine if the sound indicates a potential flood risk (e.g., heavy rain, rushing water, thunder, emergency sirens).
-              Return ONLY a valid JSON object with this exact structure:
-              {
-                "isFloodRisk": <boolean>,
-                "severity": "<e.g., CRITICAL, HIGH, MODERATE, LOW, NONE>",
-                "analysis": "<A short explanation of what you hear and the risk level. If no risk, say something reassuring like 'Everything sounds normal, no need to worry.'>"
-              }`
+              text: `Listen to this audio clip. Detect any signs of flood risk: heavy rain, rushing water, thunder, emergency sirens, or strong wind.
+Return ONLY valid JSON (no markdown, no code fences):
+{"isFloodRisk":<true|false>,"severity":"<CRITICAL|HIGH|MODERATE|LOW|NONE>","analysis":"<2 sentences describing what you hear and the flood risk>"}`
             },
-            {
-              inlineData: {
-                data: base64Audio,
-                mimeType: mimeType,
-              }
-            }
+            { inlineData: { data: base64Audio, mimeType } }
           ]
         }
       ],
       config: {
+        temperature: 0.1,
+        maxOutputTokens: 150,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -281,26 +334,17 @@ export async function analyzeAudio(base64Audio: string, mimeType: string): Promi
       }
     });
 
-    if (response.text) {
-      return JSON.parse(response.text) as AudioAnalysisResult;
-    }
-    throw new Error("Empty response from Gemini");
+    const text = response.text?.trim() ?? '';
+    if (!text) return fallback;
+    return JSON.parse(text) as AudioAnalysisResult;
+
   } catch (error: any) {
-    const msg = error?.message || '';
-    const status = error?.status || error?.code || 0;
-    if (status === 429 || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota') || msg.includes('429') || msg.includes('free_tier')) {
-      console.warn('Rate limit exceeded for audio analysis. Using fallback data.');
-      return {
-        isFloodRisk: false,
-        severity: 'NONE',
-        analysis: 'Unable to analyze audio due to high server load. Please try again later.'
-      };
+    const msg = error?.message ?? '';
+    const status = error?.status ?? error?.code ?? 0;
+    if (status === 429 || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota')) {
+      return { isFloodRisk: false, severity: 'NONE', analysis: 'Server busy. Please try audio analysis again in a moment.' };
     }
-    if (msg.includes('API_KEY') || msg.includes('API key') || msg.includes('401') || msg.includes('API_KEY_INVALID')) {
-      console.error('Audio analysis API key error:', error);
-      return { isFloodRisk: false, severity: 'NONE', analysis: 'API key error. Please check your Gemini API key configuration.' };
-    }
-    console.error('Error analyzing audio with Gemini:', error);
-    return { isFloodRisk: false, severity: 'NONE', analysis: 'Audio analysis failed. Please try again.' };
+    console.error('[Audio] Failed:', error);
+    return fallback;
   }
 }
