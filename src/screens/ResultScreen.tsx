@@ -285,26 +285,20 @@ export default function ResultScreen({ result, imageUri, location, onBack, onTab
               { range: '5–6', label: 'Moderate', color: 'bg-orange-400', desc: 'Knee-deep (0.2–0.5m). Cars at risk.' },
               { range: '7–8', label: 'Severe', color: 'bg-red-500', desc: 'Waist to roof-level (0.5–1.3m). Evacuate.' },
               { range: '9–10', label: 'Critical', color: 'bg-red-800', desc: 'Full submersion (>1.3m). Life-threatening.' },
-            ].map(({ range, label, color, desc }) => (
-              <div key={range} className={`flex items-center gap-3 px-4 py-2.5 border-b border-slate-50 last:border-0 ${
-                (['1–2','3–4','5–6','7–8','9–10'].indexOf(range) === (['1–2','3–4','5–6','7–8','9–10'].findIndex(r => {
-                  const [lo, hi] = r.split('–').map(Number);
-                  return result.riskScore >= lo && result.riskScore <= hi;
-                }))) ? 'bg-slate-50' : ''
-              }`}>
-                <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${color}`} />
-                <div className="flex-1">
-                  <span className="text-xs font-bold text-slate-800">{label} ({range})</span>
-                  <span className="text-xs text-slate-500 ml-2">{desc}</span>
+            ].map(({ range, label, color, desc }) => {
+              const [lo, hi] = range.split('–').map(Number);
+              const isActive = result.riskScore >= lo && result.riskScore <= hi;
+              return (
+                <div key={range} className={`flex items-center gap-3 px-4 py-2.5 border-b border-slate-50 last:border-0 ${isActive ? 'bg-slate-50' : ''}`}>
+                  <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${color}`} />
+                  <div className="flex-1">
+                    <span className="text-xs font-bold text-slate-800">{label} ({range})</span>
+                    <span className="text-xs text-slate-500 ml-2">{desc}</span>
+                  </div>
+                  {isActive && <span className="material-icons-round text-slate-600 text-base">arrow_left</span>}
                 </div>
-                {(() => {
-                  const [lo, hi] = range.split('–').map(Number);
-                  return result.riskScore >= lo && result.riskScore <= hi ? (
-                    <span className="material-icons-round text-slate-600 text-base">arrow_left</span>
-                  ) : null;
-                })()}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

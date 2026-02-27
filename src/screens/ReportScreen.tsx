@@ -179,7 +179,9 @@ export default function ReportScreen({ onTabChange, onScanClick, imageUri, onCle
         humanRisk: matchedZone.severity >= 8 ? 'High risk, evacuation needed' : 'Low risk',
         estimatedStartTime: matchedZone.estimatedStartTime || 'Unknown',
         estimatedEndTime: matchedZone.estimatedEndTime || 'Unknown',
-        isRelevant: true
+        isRelevant: true,
+        rejectionReason: '',
+        eventType: matchedZone.severity >= 8 ? 'Flash Flood' : matchedZone.severity >= 4 ? 'Monsoon Flood' : 'Normal',
       });
     } else {
       setMatchedZoneId(null);
@@ -208,6 +210,10 @@ export default function ReportScreen({ onTabChange, onScanClick, imageUri, onCle
     setMarkerPosition(null);
     setMapZoom(6);
     setMapCenter({ lat: 4.2105, lng: 101.9758 });
+    setIsEditingMap(false);
+    setLocalAnalysisResult(null);
+    setMatchedZoneId(null);
+    setLocationWarning('');
     onClearImage();
     setIsSubmitted(false);
   };

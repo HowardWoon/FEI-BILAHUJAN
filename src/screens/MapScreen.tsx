@@ -57,6 +57,7 @@ export default function MapScreen({ onScanClick, onTabChange, initialShowLocatio
   const [isRecording, setIsRecording] = useState(false);
   const [isAnalyzingAudio, setIsAnalyzingAudio] = useState(false);
   const [audioAnalysis, setAudioAnalysis] = useState<AudioAnalysisResult | null>(null);
+  const [audioError, setAudioError] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const [locationWarning, setLocationWarning] = useState<string>('');
@@ -342,6 +343,7 @@ export default function MapScreen({ onScanClick, onTabChange, initialShowLocatio
       mediaRecorderRef.current?.stop();
       setIsRecording(false);
     } else {
+      setAudioError(null);
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const mediaRecorder = new MediaRecorder(stream);
@@ -402,9 +404,8 @@ export default function MapScreen({ onScanClick, onTabChange, initialShowLocatio
               }
             } catch (error: any) {
               console.error("Audio analysis failed", error);
-              // Only show alert for non-timeout errors
               if (!error?.message?.includes('timed out')) {
-                alert("Failed to analyze audio. Please try again.");
+                setAudioError('Failed to analyze audio. Please try again.');
               } else {
                 console.log('⏱️ Audio analysis timed out - proceeding without analysis');
               }
@@ -419,7 +420,7 @@ export default function MapScreen({ onScanClick, onTabChange, initialShowLocatio
         setIsRecording(true);
       } catch (err) {
         console.error("Error accessing microphone:", err);
-        alert("Microphone access is required to use this feature.");
+        setAudioError('Microphone access is required to use this feature. Please allow microphone permissions and try again.');
       }
     }
   };
@@ -1090,6 +1091,25 @@ export default function MapScreen({ onScanClick, onTabChange, initialShowLocatio
                   </button>
                 </>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Audio Error Modal */}
+        {audioError && (
+          <div className="absolute inset-0 bg-black/40 z-[60] flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-6 shadow-xl w-full max-w-sm text-center animate-[slideUp_0.3s_ease-out]">
+              <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+                <span className="material-icons-round text-red-500 text-3xl">mic_off</span>
+              </div>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Audio Error</h3>
+              <p className="text-sm text-slate-500 mb-6">{audioError}</p>
+              <button
+                onClick={() => setAudioError(null)}
+                className="w-full py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+              >
+                OK
+              </button>
             </div>
           </div>
         )}

@@ -154,15 +154,16 @@ export async function analyzeFloodImage(base64Image: string, mimeType: string): 
     // NEVER silently return fake flood data — that would bypass the AI gate entirely.
     console.error("Gemini analyzeFloodImage failed:", error);
     const msg = error?.message || '';
+    const status = error?.status || error?.code || 0;
     if (msg.includes('timed out')) throw new Error(msg);
-    if (msg.includes('API_KEY') || msg.includes('API key') || msg.includes('401')) {
+    if (status === 429 || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota') || msg.includes('429') || msg.includes('free_tier')) {
+      throw new Error('AI quota exceeded. Your free-tier Gemini API limit has been reached. Please wait a moment and try again, or enable billing at ai.google.dev.');
+    }
+    if (msg.includes('API_KEY') || msg.includes('API key') || msg.includes('401') || msg.includes('API_KEY_INVALID')) {
       throw new Error('API key error. Please check your Gemini API key configuration.');
     }
-    if (msg.includes('404') || msg.includes('not found') || msg.includes('model')) {
+    if (msg.includes('404') || msg.includes('not found')) {
       throw new Error('AI model unavailable. Please try again in a moment.');
-    }
-    if (msg.includes('quota') || msg.includes('429') || msg.includes('Resource')) {
-      throw new Error('AI quota exceeded. Please wait a moment and try again.');
     }
     throw new Error('AI analysis failed. Please check your connection and try again with a clear flood or drain image.');
   }
@@ -208,7 +209,9 @@ export async function fetchLiveWeatherAndCCTV(state: string, retries = 2): Promi
     }
     throw new Error("Empty response from Gemini");
   } catch (error: any) {
-    if (error?.status === 429 || error?.message?.includes('429') || error?.message?.includes('RESOURCE_EXHAUSTED')) {
+    const msg = error?.message || '';
+    const status = error?.status || error?.code || 0;
+    if (status === 429 || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota') || msg.includes('429') || msg.includes('free_tier')) {
       console.warn(`Rate limit exceeded for ${state}. Using fallback data.`);
       return {
         state,
@@ -283,15 +286,21 @@ export async function analyzeAudio(base64Audio: string, mimeType: string): Promi
     }
     throw new Error("Empty response from Gemini");
   } catch (error: any) {
-    if (error?.status === 429 || error?.message?.includes('429') || error?.message?.includes('RESOURCE_EXHAUSTED')) {
-      console.warn("Rate limit exceeded for audio analysis. Using fallback data.");
+    const msg = error?.message || '';
+    const status = error?.status || error?.code || 0;
+    if (status === 429 || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota') || msg.includes('429') || msg.includes('free_tier')) {
+      console.warn('Rate limit exceeded for audio analysis. Using fallback data.');
       return {
         isFloodRisk: false,
-        severity: "NONE",
-        analysis: "Unable to analyze audio due to high server load. Please try again later."
+        severity: 'NONE',
+        analysis: 'Unable to analyze audio due to high server load. Please try again later.'
       };
     }
-    console.error("Error analyzing audio with Gemini:", error);
-    throw error;
+    if (msg.includes('API_KEY') || msg.includes('API key') || msg.includes('401') || msg.includes('API_KEY_INVALID')) {
+      console.error('Audio analysis API key error:', error);
+      return { isFloodRisk: false, severity: 'NONE', analysis: 'API key error. Please check your Gemini API key configuration.' };
+    }
+    console.error('Error analyzing audio with Gemini:', error);
+    return { isFloodRisk: false, severity: 'NONE', analysis: 'Audio analysis failed. Please try again.' };
   }
 }
