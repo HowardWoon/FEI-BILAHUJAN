@@ -88,7 +88,6 @@ During rapid-onset flash floods, emergency response systems suffer from four str
 |:---|:---|:---|
 | **SDG 11** | Sustainable Cities & Communities | Enables data-driven emergency response, reducing infrastructure strain and preventing avoidable loss of life in dense urban environments |
 | **SDG 13** | Climate Action | Scalable adaptation mechanism as climate change intensifies extreme weather — communities respond intelligently, not reactively |
-| **SDG 17** | Partnerships for the Goals | Bridges citizens, AI, government agencies (JPS, NADMA, APM), and the private sector through a shared verified data infrastructure |
 
 ---
 

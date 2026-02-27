@@ -26,7 +26,7 @@ export interface FloodAnalysisResult {
 export async function analyzeFloodImage(base64Image: string, mimeType: string): Promise<FloodAnalysisResult> {
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-flash",
       contents: [
         {
           role: "user",
@@ -186,7 +186,7 @@ export interface LiveWeatherAnalysis {
 export async function fetchLiveWeatherAndCCTV(state: string, retries = 2): Promise<LiveWeatherAnalysis> {
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-flash",
       contents: `Search for the current real-time weather in ${state}, Malaysia. Also, search for any recent flood warnings, heavy rain alerts, or traffic CCTV reports regarding flooding in the whole state of ${state}. 
       Based on the real-time search results, determine if it is currently raining, the flood risk, and provide a short AI analysis.
       Return ONLY a valid JSON object with this exact structure (no markdown, no code fences):
@@ -241,7 +241,7 @@ export async function fetchLiveWeatherAndCCTV(state: string, retries = 2): Promi
 export async function analyzeAudio(base64Audio: string, mimeType: string): Promise<AudioAnalysisResult> {
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-flash",
       contents: [
         {
           role: "user",

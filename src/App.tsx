@@ -126,8 +126,9 @@ export default function App() {
         />
       )}
       
-      {currentScreen === 'report' && (
-        <div className="block h-full w-full">
+      {/* Keep ReportScreen mounted while camera is open (cameraOrigin==='report') so local state (location, address, marker) is preserved */}
+      {(currentScreen === 'report' || (currentScreen === 'camera' && cameraOrigin === 'report')) && (
+        <div className={`${currentScreen === 'report' ? 'block' : 'hidden'} h-full w-full`}>
           <ReportScreen 
             onTabChange={handleTabChange}
             onScanClick={() => {
