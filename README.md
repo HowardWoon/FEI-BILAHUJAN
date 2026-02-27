@@ -15,7 +15,7 @@
 
 <br>
 
-### *"When the rain comes, intelligence answers."*
+### *"Turning flood chaos into rescue intelligence."*
 
 <br>
 
