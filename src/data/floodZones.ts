@@ -148,6 +148,8 @@ export const createZone = (
 };
 
 let floodZonesCache: Record<string, FloodZone> | null = null;
+// Track which zone IDs have already triggered a notification this session
+const notifiedZoneIds = new Set<string>();
 
 export const getFloodZones = (): Record<string, FloodZone> => {
   if (!floodZonesCache) {
@@ -236,6 +238,8 @@ export const addFloodZone = (zone: FloodZone) => {
         notifiedDepts: zone.notifiedDepts ? Array.from(new Set([...(existing.notifiedDepts || []), ...zone.notifiedDepts])) : existing.notifiedDepts
       };
       floodZonesCache[existingZoneId] = updatedZone;
+      // Mark as notified locally so Firebase onValue doesn't double-notify this client
+      if (updatedZone.severity >= 4) notifiedZoneIds.add(existingZoneId);
       
       // Save to Firebase
       saveFloodZone(updatedZone).catch(err => 
@@ -246,6 +250,8 @@ export const addFloodZone = (zone: FloodZone) => {
     } else {
       // Add as a new zone
       floodZonesCache[zone.id] = zone;
+      // Mark as notified locally so Firebase onValue doesn't double-notify this client
+      if (zone.severity >= 4) notifiedZoneIds.add(zone.id);
       
       // Save to Firebase
       saveFloodZone(zone).catch(err => 
@@ -277,6 +283,18 @@ export const useFloodZones = () => {
         // Completely replace local cache with Firebase data — no merging of local defaults
         floodZonesCache = firebaseZones;
         setZones({ ...floodZonesCache });
+
+        // Dispatch floodAlert for any high-severity zones not yet notified this session
+        // This makes both localhost and website show notifications when the other side refreshes
+        Object.entries(firebaseZones).forEach(([id, zone]) => {
+          if (zone.severity >= 4 && !notifiedZoneIds.has(id)) {
+            notifiedZoneIds.add(id);
+            window.dispatchEvent(new CustomEvent('floodAlert', { detail: { zoneId: id, zone } }));
+          }
+        });
+
+        // Also notify components that zones were updated
+        window.dispatchEvent(new CustomEvent('floodZonesUpdated'));
       }
       // If Firebase has no data yet, keep the local defaults as fallback
     });
