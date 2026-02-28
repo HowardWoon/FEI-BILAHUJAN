@@ -217,18 +217,6 @@ export default function App() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      setSelectedAlertId(notification.zoneId);
-                      setCurrentScreen('alert-detail');
-                      setNotifications(prev => prev.filter(n => n.id !== notification.id));
-                    }}
-                    className="w-7 h-7 flex items-center justify-center rounded-full bg-slate-100 hover:bg-indigo-100 text-slate-400 hover:text-indigo-600 transition-colors shrink-0"
-                    title="View details"
-                  >
-                    <span className="material-icons-round text-base">chevron_right</span>
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
                       setNotifications(prev => prev.filter(n => n.id !== notification.id));
                     }}
                     className="w-6 h-6 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:bg-slate-200 shrink-0"
