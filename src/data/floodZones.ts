@@ -239,7 +239,10 @@ export const addFloodZone = (zone: FloodZone) => {
       };
       floodZonesCache[existingZoneId] = updatedZone;
       // Mark as notified locally so Firebase onValue doesn't double-notify this client
-      if (updatedZone.severity >= 4) notifiedZoneIds.add(existingZoneId);
+      if (updatedZone.severity >= 4) {
+        notifiedZoneIds.add(existingZoneId);
+        notifiedZoneIds.add(`state_${updatedZone.state}`);
+      }
       
       // Save to Firebase
       saveFloodZone(updatedZone).catch(err => 
@@ -251,7 +254,10 @@ export const addFloodZone = (zone: FloodZone) => {
       // Add as a new zone
       floodZonesCache[zone.id] = zone;
       // Mark as notified locally so Firebase onValue doesn't double-notify this client
-      if (zone.severity >= 4) notifiedZoneIds.add(zone.id);
+      if (zone.severity >= 4) {
+        notifiedZoneIds.add(zone.id);
+        notifiedZoneIds.add(`state_${zone.state}`);
+      }
       
       // Save to Firebase
       saveFloodZone(zone).catch(err => 
@@ -284,11 +290,27 @@ export const useFloodZones = () => {
         floodZonesCache = firebaseZones;
         setZones({ ...floodZonesCache });
 
-        // Dispatch floodAlert for any high-severity zones not yet notified this session
-        // This makes both localhost and website show notifications when the other side refreshes
+        // Dispatch ONE floodAlert per state (highest severity zone only)
+        // to prevent duplicate notifications when multiple zones exist for the same state
+        const bestPerState = new Map<string, { id: string; zone: FloodZone }>();
         Object.entries(firebaseZones).forEach(([id, zone]) => {
-          if (zone.severity >= 4 && !notifiedZoneIds.has(id)) {
-            notifiedZoneIds.add(id);
+          if (zone.severity >= 4) {
+            const existing = bestPerState.get(zone.state);
+            if (!existing || zone.severity > existing.zone.severity) {
+              bestPerState.set(zone.state, { id, zone });
+            }
+          }
+        });
+
+        bestPerState.forEach(({ id, zone }) => {
+          // Use state as the notification key so all zone IDs for that state are covered
+          const stateKey = `state_${zone.state}`;
+          if (!notifiedZoneIds.has(stateKey)) {
+            notifiedZoneIds.add(stateKey);
+            // Also mark all individual zone IDs for this state so addFloodZone won't re-notify
+            Object.entries(firebaseZones).forEach(([zid, z]) => {
+              if (z.state === zone.state) notifiedZoneIds.add(zid);
+            });
             window.dispatchEvent(new CustomEvent('floodAlert', { detail: { zoneId: id, zone } }));
           }
         });
