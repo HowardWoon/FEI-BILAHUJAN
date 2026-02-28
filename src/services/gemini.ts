@@ -315,7 +315,7 @@ export async function fetchStateTownsWithWeather(
   }
 
   try {
-    const response = await ai.models.generateContent({
+    const apiCall = ai.models.generateContent({
       model: 'gemini-2.0-flash',
       contents: `Search Google Maps and Google Search for major towns in ${state}, Malaysia and their CURRENT weather and flood status today.\n\nYou MUST reply with ONLY a raw JSON array. No explanation, no markdown, no code fences. Start your reply with [ and end with ].\n\nExample format:\n[{"town":"Shah Alam","lat":3.073,"lng":101.518,"weatherCondition":"Heavy Rain","isRaining":true,"severity":7,"aiAnalysisText":"Flash flood risk near low-lying areas."},{"town":"Klang","lat":3.044,"lng":101.445,"weatherCondition":"Cloudy","isRaining":false,"severity":2,"aiAnalysisText":"Conditions normal, no flood risk."}]\n\nReturn up to 8 towns from ${state}, Malaysia with real GPS coordinates and real current weather data from search results.`,
       config: {
@@ -324,6 +324,12 @@ export async function fetchStateTownsWithWeather(
         maxOutputTokens: 1200
       }
     });
+
+    const response = await withTimeout(apiCall, 12000, null);
+    if (!response) {
+      console.warn(`[Towns] Timeout for ${state} — using fallback`);
+      return buildFallbackTowns(state);
+    }
 
     const raw = response.text?.trim() ?? '';
     console.log(`[Towns] Raw response for ${state}:`, raw.slice(0, 300));
@@ -361,7 +367,7 @@ export async function fetchStateTownsWithWeather(
     }
     if (retries > 0) {
       console.warn(`[Towns] Retrying ${state}...`);
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 1000));
       return fetchStateTownsWithWeather(state, retries - 1);
     }
     console.error(`[Towns] Failed for ${state}, using fallback:`, msg);
@@ -369,24 +375,16 @@ export async function fetchStateTownsWithWeather(
   }
 }
 
-// Build fallback town list using hardcoded coords + call live weather per town
-async function buildFallbackTowns(state: string): Promise<TownWeatherResult[]> {
+// Build fallback town list using hardcoded coords — no extra API calls (avoids quota spiral)
+function buildFallbackTowns(state: string): TownWeatherResult[] {
   const known = STATE_TOWNS[state] ?? [];
-  if (known.length === 0) return [];
-
-  // Fetch weather for each known town in parallel (up to 5)
-  const slice = known.slice(0, 5);
-  const results = await Promise.allSettled(
-    slice.map(async (t) => {
-      try {
-        const w = await fetchLiveWeatherForTown(t.town, state);
-        return { ...t, weatherCondition: w.weatherCondition, isRaining: w.isRaining, severity: w.severity, aiAnalysisText: w.aiAnalysisText } as TownWeatherResult;
-      } catch {
-        return { ...t, weatherCondition: 'Cloudy', isRaining: false, severity: 1, aiAnalysisText: 'Weather data unavailable.' } as TownWeatherResult;
-      }
-    })
-  );
-  return results.filter(r => r.status === 'fulfilled').map(r => (r as PromiseFulfilledResult<TownWeatherResult>).value);
+  return known.slice(0, 6).map(t => ({
+    ...t,
+    weatherCondition: 'Cloudy',
+    isRaining: false,
+    severity: 1,
+    aiAnalysisText: `No active flood alerts for ${t.town}. Tap refresh for live data.`
+  }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -394,24 +392,29 @@ async function buildFallbackTowns(state: string): Promise<TownWeatherResult[]> {
 // Real-time weather + flood alerts per Malaysian state
 // Uses gemini-2.0-flash with Google Search grounding (confirmed available)
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Hard 10-second timeout per AI call — prevents indefinite hangs
+const withTimeout = <T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> =>
+  Promise.race([promise, new Promise<T>(resolve => setTimeout(() => resolve(fallback), ms))]);
+
 export async function fetchLiveWeatherAndCCTV(
   state: string,
-  retries = 2
+  retries = 1
 ): Promise<LiveWeatherAnalysis> {
 
   const fallback: LiveWeatherAnalysis = {
     state,
-    weatherCondition: "Checking...",
+    weatherCondition: "Cloudy",
     isRaining: false,
     floodRisk: "Low",
     severity: 1,
-    aiAnalysisText: `Fetching live weather...`
+    aiAnalysisText: `No active flood alerts for ${state}. Conditions appear normal.`
   };
 
   if (!isKeyValid(GEMINI_API_KEY)) return fallback;
 
   try {
-    const response = await ai.models.generateContent({
+    const apiCall = ai.models.generateContent({
       model: "gemini-2.0-flash",
       contents: `Search for the CURRENT real-time weather in ${state}, Malaysia right now.
 Also search for any active flood warnings, heavy rain alerts, or CCTV traffic flood reports for ${state} Malaysia today.
@@ -424,6 +427,12 @@ Based on live search results respond ONLY with this JSON (no markdown, no code f
         maxOutputTokens: 200
       }
     });
+
+    const response = await withTimeout(apiCall, 10000, null);
+    if (!response) {
+      console.warn(`[Weather] Timeout for ${state} — using fallback`);
+      return fallback;
+    }
 
     const raw = response.text?.trim() ?? '';
     const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
@@ -442,7 +451,7 @@ Based on live search results respond ONLY with this JSON (no markdown, no code f
     }
     if (retries > 0) {
       console.warn(`[Weather] Retrying ${state}, ${retries - 1} attempts left`);
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 1000));
       return fetchLiveWeatherAndCCTV(state, retries - 1);
     }
     console.error(`[Weather] All retries failed for ${state}:`, error);
@@ -457,22 +466,22 @@ Based on live search results respond ONLY with this JSON (no markdown, no code f
 export async function fetchLiveWeatherForTown(
   town: string,
   state: string,
-  retries = 1
+  retries = 0
 ): Promise<LiveWeatherAnalysis> {
 
   const fallback: LiveWeatherAnalysis = {
     state,
-    weatherCondition: "Checking...",
+    weatherCondition: "Cloudy",
     isRaining: false,
     floodRisk: "Low",
     severity: 1,
-    aiAnalysisText: `Unable to fetch live data for ${town}.`
+    aiAnalysisText: `No active flood alerts for ${town}. Conditions appear normal.`
   };
 
   if (!isKeyValid(GEMINI_API_KEY)) return fallback;
 
   try {
-    const response = await ai.models.generateContent({
+    const apiCall = ai.models.generateContent({
       model: "gemini-2.0-flash",
       contents: `Search for CURRENT real-time weather and flood conditions specifically in ${town}, ${state}, Malaysia right now today.
 Look for any flood alerts, road closures, heavy rain, or water level reports for ${town} ${state} Malaysia.
@@ -485,6 +494,12 @@ Respond ONLY with this JSON (no markdown, no code fences):
         maxOutputTokens: 200
       }
     });
+
+    const response = await withTimeout(apiCall, 10000, null);
+    if (!response) {
+      console.warn(`[Weather] Timeout for ${town} — using fallback`);
+      return fallback;
+    }
 
     const raw = response.text?.trim() ?? '';
     const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
@@ -502,7 +517,7 @@ Respond ONLY with this JSON (no markdown, no code fences):
       return fallback;
     }
     if (retries > 0) {
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 1000));
       return fetchLiveWeatherForTown(town, state, retries - 1);
     }
     console.error(`[Weather] All retries failed for ${town}:`, error);

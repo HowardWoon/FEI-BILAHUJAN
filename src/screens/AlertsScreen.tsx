@@ -102,7 +102,7 @@ export default function AlertsScreen({ onTabChange, onAlertClick, onScanClick }:
       } else {
         // ── Statewide overview: one query per state ──
         setRefreshStatus(`Checking weather (0/${total})...`);
-        const batchSize = 4;
+        const batchSize = 8;
         for (let i = 0; i < statesToUpdate.length; i += batchSize) {
           const batch = statesToUpdate.slice(i, i + batchSize);
           await Promise.allSettled(batch.map(async (state) => {

@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { saveFloodZone } from '../services/dataCollection';
+import { ref, onValue } from 'firebase/database';
+import { rtdb } from '../firebase';
 
 export interface FloodZone {
   id: string;
@@ -259,16 +261,30 @@ export const useFloodZones = () => {
   const [zones, setZones] = useState<Record<string, FloodZone>>(getFloodZones());
 
   useEffect(() => {
+    // Listen to local window events (for same-tab updates)
     const handleUpdate = () => {
       setZones({ ...getFloodZones() });
     };
-
     window.addEventListener('floodZonesUpdated', handleUpdate);
     window.addEventListener('floodAlert', handleUpdate);
-    
+
+    // Listen to Firebase RTDB liveZones for cross-device / cross-tab sync
+    // Replace the entire cache with Firebase data so localhost always mirrors the website exactly
+    const liveZonesRef = ref(rtdb, 'liveZones');
+    const unsubscribeFirebase = onValue(liveZonesRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const firebaseZones = snapshot.val() as Record<string, FloodZone>;
+        // Completely replace local cache with Firebase data — no merging of local defaults
+        floodZonesCache = firebaseZones;
+        setZones({ ...floodZonesCache });
+      }
+      // If Firebase has no data yet, keep the local defaults as fallback
+    });
+
     return () => {
       window.removeEventListener('floodZonesUpdated', handleUpdate);
       window.removeEventListener('floodAlert', handleUpdate);
+      unsubscribeFirebase();
     };
   }, []);
 
