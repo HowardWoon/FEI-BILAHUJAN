@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, ChangeEvent } from 'react';
 import StatusBar from '../components/StatusBar';
 import { analyzeFloodImage, FloodAnalysisResult } from '../services/gemini';
 
@@ -66,7 +66,7 @@ export default function CameraScreen({ onBack, onAnalysisComplete, onTabChange }
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 

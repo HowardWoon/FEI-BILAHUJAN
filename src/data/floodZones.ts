@@ -240,7 +240,7 @@ export const addFloodZone = (zone: FloodZone) => {
         console.error('Error saving updated zone to Firebase:', err)
       );
       
-      window.dispatchEvent(new CustomEvent('floodAlert', { detail: { zoneId: existingZoneId, zone: updatedZone } }));
+      // Notification is dispatched by AlertsScreen for live zones; only dispatch here for user-reported zones
     } else {
       // Add as a new zone
       floodZonesCache[zone.id] = zone;
@@ -249,8 +249,6 @@ export const addFloodZone = (zone: FloodZone) => {
       saveFloodZone(zone).catch(err => 
         console.error('Error saving new zone to Firebase:', err)
       );
-      
-      window.dispatchEvent(new CustomEvent('floodAlert', { detail: { zoneId: zone.id, zone } }));
     }
     // Dispatch a general update event
     window.dispatchEvent(new CustomEvent('floodZonesUpdated'));

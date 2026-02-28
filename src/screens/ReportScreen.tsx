@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
 import BottomNav from '../components/BottomNav';
 import { FloodAnalysisResult } from '../services/gemini';
-import { getFloodZones, FloodZone } from '../data/floodZones';
+import { getFloodZones } from '../data/floodZones';
 
 import { isMalaysianLocation, getMalaysiaLocationWarning } from '../utils/locationValidator';
 import { officialLogos } from '../data/officialLogos';

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { ref, onValue } from 'firebase/database';
 import { db, rtdb } from '../firebase';
-import { UserReport, getRecentReports } from '../services/dataCollection';
+import { UserReport, getRecentReports } from './dataCollection';
 
 /**
  * React Hook to monitor live reports from Firebase

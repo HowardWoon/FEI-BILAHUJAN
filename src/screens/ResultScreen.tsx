@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import StatusBar from '../components/StatusBar';
 import BottomNav from '../components/BottomNav';
 import { FloodAnalysisResult } from '../services/gemini';
@@ -53,7 +53,7 @@ interface ResultScreenProps {
   zoneId?: string | null;
 }
 
-export default function ResultScreen({ result, imageUri, location, onBack, onTabChange, zoneId }: ResultScreenProps) {
+export default function ResultScreen({ result, imageUri, location, onBack, onTabChange }: ResultScreenProps) {
   const [isUploaded, setIsUploaded] = useState(false);
   const [nearbyUsers, setNearbyUsers] = useState(0);
   const [fullAddress, setFullAddress] = useState(location?.address || 'Unknown Location');
@@ -148,6 +148,9 @@ export default function ResultScreen({ result, imageUri, location, onBack, onTab
       newZone.eventType = result.eventType;
       
       addFloodZone(newZone);
+
+      // Fire notification banner in App.tsx
+      window.dispatchEvent(new CustomEvent('floodAlert', { detail: { zoneId: newZoneId, zone: newZone } }));
     }
     setNearbyUsers(Math.floor(Math.random() * 2000) + 500); // Random number between 500 and 2500
     setIsUploaded(true);

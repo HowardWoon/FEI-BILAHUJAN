@@ -1,6 +1,6 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
+import { getAnalytics, isSupported } from "firebase/analytics";
 import { getFirestore } from "firebase/firestore";
 import { getDatabase } from "firebase/database";
 import { getStorage } from "firebase/storage";
@@ -22,7 +22,14 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
+
+// Analytics only works on HTTPS (not localhost)
+// Use isSupported() guard to prevent crashes in dev/localhost
+let analytics: ReturnType<typeof getAnalytics> | null = null;
+isSupported().then(supported => {
+  if (supported) analytics = getAnalytics(app);
+}).catch(() => {});
+
 const db = getFirestore(app);
 const rtdb = getDatabase(app);
 const storage = getStorage(app);

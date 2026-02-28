@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState, FC } from 'react';
 import { 
   FloodStatistics, 
   LocationAnalytics,
@@ -16,7 +16,7 @@ import { DataExportPanel } from '../components/DataExportPanel';
  * Analytics and insights for government agencies (JPS, NADMA, APM)
  */
 
-export const GovernmentDashboard: React.FC = () => {
+export const GovernmentDashboard: FC = () => {
   const [statistics, setStatistics] = useState<FloodStatistics | null>(null);
   const [locationAnalytics, setLocationAnalytics] = useState<LocationAnalytics[]>([]);
   const [timeSeries, setTimeSeries] = useState<TimeSeriesData[]>([]);

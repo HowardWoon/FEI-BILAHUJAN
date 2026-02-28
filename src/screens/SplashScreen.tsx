@@ -1,5 +1,3 @@
-import React from 'react';
-
 export default function SplashScreen() {
   return (
     <div className="relative flex flex-col items-center justify-center h-full w-full overflow-hidden bg-white">

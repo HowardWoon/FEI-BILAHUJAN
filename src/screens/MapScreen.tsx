@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { GoogleMap, useJsApiLoader, Polygon, Circle } from '@react-google-maps/api';
 
 const GOOGLE_MAPS_LIBRARIES: ('places')[] = ['places'];
@@ -25,7 +25,7 @@ const STATE_RADIUS_M: Record<string, number> = {
 import BottomNav from '../components/BottomNav';
 import StatusBar from '../components/StatusBar';
 import { PrivacyNotice } from '../components/PrivacyNotice';
-import { FloodZone, getFloodZones, useFloodZones } from '../data/floodZones';
+import { FloodZone, useFloodZones } from '../data/floodZones';
 import { analyzeAudio, AudioAnalysisResult } from '../services/gemini';
 import { saveAudioAnalysis } from '../services/dataCollection';
 import { isMalaysianLocation, getMalaysiaLocationWarning } from '../utils/locationValidator';

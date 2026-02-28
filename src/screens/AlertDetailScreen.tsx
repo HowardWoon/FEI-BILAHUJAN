@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import StatusBar from '../components/StatusBar';
 import BottomNav from '../components/BottomNav';
 import { getFloodZones } from '../data/floodZones';

@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import StatusBar from '../components/StatusBar';
 import BottomNav from '../components/BottomNav';
-import { getFloodZones, FloodZone, addFloodZone, createZone, useFloodZones } from '../data/floodZones';
-import { fetchLiveWeatherAndCCTV } from '../services/gemini';
+import { FloodZone, addFloodZone, createZone, useFloodZones } from '../data/floodZones';
+import { fetchLiveWeatherAndCCTV, fetchStateTownsWithWeather } from '../services/gemini';
 
 interface AlertsScreenProps {
   onTabChange: (tab: 'map' | 'report' | 'alert') => void;
@@ -38,90 +38,106 @@ export default function AlertsScreen({ onTabChange, onAlertClick, onScanClick }:
   const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
 
   const handleRefreshLiveData = async () => {
+    if (isRefreshing) return; // prevent double-run
     setIsRefreshing(true);
-    setRefreshStatus('Connecting to Google Weather & CCTV...');
-    
+
+    const allStatesList = [
+      'Selangor', 'Kuala Lumpur', 'Johor', 'Penang', 'Pahang',
+      'Sarawak', 'Sabah', 'Perak', 'Kedah', 'Kelantan',
+      'Terengganu', 'Negeri Sembilan', 'Melaka', 'Perlis',
+      'Putrajaya', 'Labuan'
+    ];
+    const statesToUpdate = allStatesList;
+    const total = statesToUpdate.length;
+    let done = 0;
+
+    const coords: Record<string, [number, number]> = {
+      'Selangor': [3.07, 101.51], 'Kuala Lumpur': [3.14, 101.69],
+      'Kelantan': [6.12, 102.23], 'Johor': [1.49, 103.74],
+      'Penang': [5.35, 100.28], 'Pahang': [3.81, 103.32],
+      'Sarawak': [1.55, 110.35], 'Sabah': [5.98, 116.07],
+      'Perak': [4.59, 101.09], 'Kedah': [6.12, 100.36],
+      'Terengganu': [5.33, 103.15], 'Negeri Sembilan': [2.72, 101.94],
+      'Melaka': [2.19, 102.25], 'Perlis': [6.44, 100.20],
+      'Putrajaya': [2.92, 101.69], 'Labuan': [5.28, 115.24],
+    };
+
     try {
-      const allStatesList = [
-        'Selangor', 'Kuala Lumpur', 'Johor', 'Penang', 'Pahang', 
-        'Sarawak', 'Sabah', 'Perak', 'Kedah', 'Kelantan', 
-        'Terengganu', 'Negeri Sembilan', 'Melaka', 'Perlis', 
-        'Putrajaya', 'Labuan'
-      ];
-      
-      const statesToUpdate = selectedState ? [selectedState] : allStatesList;
-      
-      if (!selectedState) {
-        setRefreshStatus('Analyzing live data for all states in Malaysia...');
-      } else {
-        setRefreshStatus(`Analyzing live data for ${selectedState}...`);
-      }
-      
-      // Process in batches of 2 to avoid rate limits but keep it fast
-      const batchSize = 2;
-      for (let i = 0; i < statesToUpdate.length; i += batchSize) {
-        const batch = statesToUpdate.slice(i, i + batchSize);
-        
-        await Promise.all(batch.map(async (state) => {
-          try {
-            const liveData = await fetchLiveWeatherAndCCTV(state);
-            
-            // Create a new zone based on the live data
-            const newZoneId = `live_${state.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`;
-            
-            // Assign a mock coordinate based on the state (in a real app, we'd geocode the state)
-            let lat = 3.14, lng = 101.69; // Default KL
-            if (state === 'Selangor') { lat = 3.07; lng = 101.51; }
-            else if (state === 'Kelantan') { lat = 6.12; lng = 102.23; }
-            else if (state === 'Johor') { lat = 1.49; lng = 103.74; }
-            else if (state === 'Penang') { lat = 5.35; lng = 100.28; }
-            else if (state === 'Pahang') { lat = 3.81; lng = 103.32; }
-            else if (state === 'Sarawak') { lat = 1.55; lng = 110.35; }
-            else if (state === 'Sabah') { lat = 5.98; lng = 116.07; }
-            else if (state === 'Perak') { lat = 4.59; lng = 101.09; }
-            else if (state === 'Kedah') { lat = 6.12; lng = 100.36; }
-            else if (state === 'Terengganu') { lat = 5.33; lng = 103.15; }
-            else if (state === 'Negeri Sembilan') { lat = 2.72; lng = 101.94; }
-            else if (state === 'Melaka') { lat = 2.19; lng = 102.25; }
-            else if (state === 'Perlis') { lat = 6.44; lng = 100.20; }
-            else if (state === 'Putrajaya') { lat = 2.92; lng = 101.69; }
-            else if (state === 'Labuan') { lat = 5.28; lng = 115.24; }
-            
-            const newZone = createZone(
-              newZoneId,
-              `Statewide Overview`,
-              `Live Weather: ${liveData.weatherCondition}`,
-              state,
-              'Live Region',
-              lat,
-              lng,
-              liveData.severity,
-              liveData.aiAnalysisText,
-              0.05,
-              ['Google Weather', 'CCTV Live', 'AI Analysis']
-            );
-            
-            newZone.eventType = liveData.isRaining ? 'Heavy Rain' : 'Normal';
-            
-            addFloodZone(newZone);
-          } catch (err) {
-            console.error(`Failed to fetch data for ${state}:`, err);
-          }
-        }));
-        
-        // Add a small delay between batches to avoid rate limiting
-        if (i + batchSize < statesToUpdate.length) {
-          await new Promise(resolve => setTimeout(resolve, 1500));
+      if (selectedState) {
+        // ── Town-level refresh: use Google Maps/Search to discover real towns ──
+        setRefreshStatus(`Searching Google Maps for ${selectedState} towns...`);
+        const towns = await fetchStateTownsWithWeather(selectedState);
+
+        if (towns.length === 0) {
+          setRefreshStatus('Could not find towns. Try again.');
+          setTimeout(() => setRefreshStatus(null), 2500);
+          return;
         }
-      }
-      
-      setRefreshStatus('Live data updated successfully!');
-      setTimeout(() => setRefreshStatus(null), 3000);
-      
+
+        setRefreshStatus(`Found ${towns.length} towns. Updating...`);
+
+        towns.forEach((townData) => {
+          const zoneId = `live_town_${townData.town.toLowerCase().replace(/\s+/g, '_')}_${selectedState.toLowerCase().replace(/\s+/g, '_')}`;
+          const newZone = createZone(
+            zoneId,
+            townData.town,
+            `Live Weather: ${townData.weatherCondition}`,
+            selectedState,
+            'Live Region',
+            townData.lat,
+            townData.lng,
+            townData.severity,
+            townData.weatherCondition,
+            0.05,
+            ['Google Maps', 'Google Search', 'AI Analysis']
+          );
+          newZone.aiAnalysisText = townData.aiAnalysisText;
+          newZone.eventType = townData.isRaining ? 'Heavy Rain' : 'Normal';
+          addFloodZone(newZone);
+          if (townData.severity >= 4) {
+            window.dispatchEvent(new CustomEvent('floodAlert', { detail: { zoneId: zoneId, zone: newZone } }));
+          }
+        });
+        window.dispatchEvent(new CustomEvent('floodZonesUpdated'));
+      } else {
+        // ── Statewide overview: one query per state ──
+        setRefreshStatus(`Checking weather (0/${total})...`);
+        const batchSize = 4;
+        for (let i = 0; i < statesToUpdate.length; i += batchSize) {
+          const batch = statesToUpdate.slice(i, i + batchSize);
+          await Promise.allSettled(batch.map(async (state) => {
+            try {
+              const liveData = await fetchLiveWeatherAndCCTV(state);
+              const [lat, lng] = coords[state] ?? [3.14, 101.69];
+              const newZoneId = `live_${state.toLowerCase().replace(/\s+/g, '_')}`;
+              const newZone = createZone(
+                newZoneId, 'Statewide Overview',
+                `Live Weather: ${liveData.weatherCondition}`,
+                state, 'Live Region', lat, lng,
+                liveData.severity, liveData.weatherCondition,
+                0.05, ['Google Weather', 'CCTV Live', 'AI Analysis']
+              );
+              newZone.aiAnalysisText = liveData.aiAnalysisText;
+              newZone.eventType = liveData.isRaining ? 'Heavy Rain' : 'Normal';
+              addFloodZone(newZone);
+              window.dispatchEvent(new CustomEvent('floodAlert', { detail: { zoneId: newZoneId, zone: newZone } }));
+            } catch (err) {
+              console.error(`Failed to fetch data for ${state}:`, err);
+            }
+            done++;
+            setRefreshStatus(`Checking weather (${done}/${total})...`);
+          }));
+          if (i + batchSize < statesToUpdate.length) {
+            await new Promise(r => setTimeout(r, 1000));
+          }
+        }
+      } // end statewide
+
+      setRefreshStatus('Updated!');
+      setTimeout(() => setRefreshStatus(null), 2000);
     } catch (error) {
-      console.error("Failed to refresh live data:", error);
-      setRefreshStatus('Failed to update live data.');
-      setTimeout(() => setRefreshStatus(null), 3000);
+      setRefreshStatus('Update failed.');
+      setTimeout(() => setRefreshStatus(null), 2000);
     } finally {
       setIsRefreshing(false);
     }
@@ -363,7 +379,7 @@ export default function AlertsScreen({ onTabChange, onAlertClick, onScanClick }:
               let headerTextColor = 'text-slate-600';
               let headerText = 'Maintenance Notice';
 
-              let isLiveUpdate = zone.id.startsWith('live_');
+              const isLiveUpdate = zone.id.startsWith('live_');
               
               if (zone.severity >= 8) {
                 headerBgColor = 'bg-[#EF4444]/10';
@@ -396,7 +412,7 @@ export default function AlertsScreen({ onTabChange, onAlertClick, onScanClick }:
                       <h3 className="font-bold text-lg">{zone.name}</h3>
                       <span className="text-xs font-medium text-slate-500 mt-1">Level {zone.severity}</span>
                     </div>
-                    {renderFormattedAnalysis(zone.forecast)}
+                    {renderFormattedAnalysis(zone.aiAnalysisText || zone.forecast)}
                     {(zone.estimatedStartTime || zone.estimatedEndTime) && (
                       <div className="flex gap-4 mb-4 text-xs text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-100">
                         {zone.estimatedStartTime && (

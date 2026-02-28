@@ -1,5 +1,3 @@
-import React from 'react';
-
 interface BottomNavProps {
   activeTab: 'map' | 'report' | 'alert';
   onTabChange: (tab: 'map' | 'report' | 'alert') => void;

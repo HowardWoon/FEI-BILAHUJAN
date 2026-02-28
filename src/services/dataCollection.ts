@@ -5,16 +5,14 @@ import {
   updateDoc, 
   doc, 
   serverTimestamp, 
-  Timestamp,
   setDoc,
   getDocs,
   query,
-  where,
   orderBy,
   limit
 } from 'firebase/firestore';
-import { ref, set, push, onValue, update, get } from 'firebase/database';
-import { FloodZone } from '../data/floodZones';
+import { ref, set, onValue, update, get } from 'firebase/database';
+import type { FloodZone } from '../data/floodZones';
 import { FloodAnalysisResult } from './gemini';
 
 // Collection names

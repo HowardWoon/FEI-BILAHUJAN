@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, FC } from 'react';
 import { 
   exportDataForGovernment, 
   generateCSVReport 
@@ -9,7 +9,7 @@ import {
  * Allows exporting anonymized flood data in various formats
  */
 
-export const DataExportPanel: React.FC = () => {
+export const DataExportPanel: FC = () => {
   const [startDate, setStartDate] = useState<string>(
     new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   );

@@ -5,10 +5,26 @@ import {defineConfig, loadEnv} from 'vite';
 
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
+  // Support both VITE_GEMINI_API_KEY and the bare GEMINI_API_KEY in .env
+  const geminiKey = env.VITE_GEMINI_API_KEY || env.GEMINI_API_KEY || '';
+
   return {
     plugins: [react(), tailwindcss()],
     define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      // Inject key as process.env so gemini.ts fallback works with either GEMINI_API_KEY or VITE_GEMINI_API_KEY in .env
+      'process.env.GEMINI_API_KEY': JSON.stringify(geminiKey),
+    },
+    build: {
+      chunkSizeWarningLimit: 600,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'vendor-firebase': ['firebase/app', 'firebase/analytics', 'firebase/database', 'firebase/firestore'],
+            'vendor-maps':     ['@react-google-maps/api'],
+            'vendor-ai':       ['@google/genai'],
+          },
+        },
+      },
     },
     resolve: {
       alias: {

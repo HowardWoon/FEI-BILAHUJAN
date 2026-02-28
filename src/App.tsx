@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import SplashScreen from './screens/SplashScreen';
 import MapScreen from './screens/MapScreen';
 import CameraScreen from './screens/CameraScreen';
@@ -57,11 +57,15 @@ export default function App() {
       const customEvent = e as CustomEvent;
       const { zoneId, zone } = customEvent.detail;
       const id = Date.now();
-      setNotifications(prev => [...prev, { id, zoneId, zone }]);
+      // Replace existing notification for the same state, don't stack duplicates
+      setNotifications(prev => {
+        const filtered = prev.filter(n => n.zone.state !== zone.state);
+        return [...filtered, { id, zoneId, zone }];
+      });
     };
     window.addEventListener('floodAlert', handleFloodAlert);
     return () => window.removeEventListener('floodAlert', handleFloodAlert);
-  }, [currentScreen]);
+  }, []); // [] — listener doesn't depend on screen state, must be stable across navigations
 
   const handleTabChange = (tab: 'map' | 'report' | 'alert') => {
     if (tab === 'map') {
@@ -183,14 +187,18 @@ export default function App() {
           </div>
           {notifications.map((notification) => {
             const sev = notification.zone.severity;
-            const isFlood = sev >= 4;
             const isCritical = sev >= 8;
-            const borderColor = isCritical ? 'border-red-200' : isFlood ? 'border-orange-200' : 'border-green-200';
-            const iconBg = isCritical ? 'bg-red-100' : isFlood ? 'bg-orange-100' : 'bg-green-100';
-            const iconColor = isCritical ? 'text-red-600' : isFlood ? 'text-orange-500' : 'text-green-600';
-            const titleColor = isCritical ? 'text-red-600' : isFlood ? 'text-orange-500' : 'text-green-600';
-            const icon = isCritical ? 'warning' : isFlood ? 'water_damage' : 'check_circle';
-            const label = isCritical ? 'Flood Alert Nearby' : isFlood ? 'Flood Warning Nearby' : 'Area Status Update';
+            const isFlood = sev >= 4;
+            const stateName = notification.zone.state || notification.zone.name;
+
+            const borderColor = isCritical ? 'border-l-red-500' : isFlood ? 'border-l-orange-400' : 'border-l-green-500';
+            const statusColor = isCritical ? 'text-red-600' : isFlood ? 'text-orange-500' : 'text-green-600';
+            const statusText = isCritical
+              ? 'Flooding reported in this area.'
+              : isFlood
+              ? 'Water levels are rising. Stay alert.'
+              : 'No flood threat detected.';
+
             return (
               <div key={notification.id} className="pointer-events-auto animate-[slideDown_0.3s_ease-out]">
                 <div
@@ -199,24 +207,20 @@ export default function App() {
                     setCurrentScreen('alert-detail');
                     setNotifications(prev => prev.filter(n => n.id !== notification.id));
                   }}
-                  className={`bg-white rounded-2xl shadow-2xl border ${borderColor} px-4 py-3 cursor-pointer hover:bg-slate-50 transition-colors flex items-start gap-3`}
+                  className={`bg-white rounded-xl shadow-lg border border-slate-100 border-l-4 ${borderColor} px-3 py-2.5 cursor-pointer hover:bg-slate-50 transition-colors flex items-center gap-3`}
                 >
-                  <div className={`w-9 h-9 rounded-full ${iconBg} flex items-center justify-center shrink-0 mt-0.5`}>
-                    <span className={`material-icons-round text-lg ${iconColor}`}>{icon}</span>
-                  </div>
                   <div className="flex-1 min-w-0">
-                    <h4 className={`${titleColor} font-bold text-xs mb-0.5`}>{label}</h4>
-                    <p className="text-slate-800 font-bold text-sm truncate">
-                      {notification.zone.name === 'Statewide Overview' ? `${notification.zone.state} - Statewide Overview` : notification.zone.name}
-                    </p>
-                    <p className="text-slate-500 text-xs line-clamp-1 mt-0.5">{notification.zone.forecast}</p>
+                    <p className="text-slate-900 font-extrabold text-base truncate">{stateName}</p>
+                    <p className="text-slate-400 text-[10px] uppercase tracking-wide -mt-0.5 mb-0.5">State Overview</p>
+                    <p className={`font-medium text-xs ${statusColor}`}>{statusText}</p>
                   </div>
+                  <span className="material-icons-round text-slate-300 text-base shrink-0">chevron_right</span>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       setNotifications(prev => prev.filter(n => n.id !== notification.id));
                     }}
-                    className="w-7 h-7 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:bg-slate-200 shrink-0 mt-0.5"
+                    className="w-6 h-6 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:bg-slate-200 shrink-0"
                   >
                     <span className="material-icons-round text-sm">close</span>
                   </button>
