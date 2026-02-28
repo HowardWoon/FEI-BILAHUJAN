@@ -307,7 +307,7 @@ Rejection        │
 
 ```bash
 # Clone the repository
-git clone https://github.com/howardwoonhz06/bilahujan.git
+git clone https://github.com/HowardWoon/FEI-BILAHUJAN.git
 cd bilahujan
 
 # Install dependencies
