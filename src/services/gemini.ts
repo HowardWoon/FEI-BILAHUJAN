@@ -3,23 +3,28 @@ import { ref, get, set } from "firebase/database";
 import { rtdb } from "../firebase";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ⚠️  CRITICAL FIX: Vite requires import.meta.env — NOT process.env
-//     process.env returns undefined in the browser (Vite/React),
-//     which is why every Gemini call silently fails with an auth error.
+// API KEY — TWO PROBLEMS FIXED HERE:
 //
-//     Your .env file must use: VITE_GEMINI_API_KEY=your_key_here
+// Problem 1 (localhost):  process.env doesn't work in Vite browser builds.
+//                         Must use import.meta.env.VITE_GEMINI_API_KEY
+//
+// Problem 2 (deployed site):  .env is NEVER included in Firebase Hosting.
+//                              The key must be hardcoded or injected at build time.
+//
+// SOLUTION: Try import.meta.env first, fall back to HARDCODED_KEY.
 // ─────────────────────────────────────────────────────────────────────────────
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY as string;
+const HARDCODED_KEY = 'AIzaSyAmZGP5zA3T8m3SlXW27NMyQSBvMtM-i7k'; // ← replace with your real key
+const GEMINI_API_KEY: string =
+  (import.meta.env.VITE_GEMINI_API_KEY as string) || HARDCODED_KEY;
 
-if (!GEMINI_API_KEY) {
+if (!GEMINI_API_KEY || GEMINI_API_KEY === 'YOUR_ACTUAL_GEMINI_API_KEY_HERE') {
   console.error(
-    '[Gemini] ❌ VITE_GEMINI_API_KEY is undefined!\n' +
-    'Steps to fix:\n' +
-    '  1. Open your .env file in the project root\n' +
-    '  2. Add: VITE_GEMINI_API_KEY=your_api_key_here\n' +
-    '  3. Stop the dev server (Ctrl+C)\n' +
-    '  4. Run: npm run dev'
+    '[Gemini] ❌ API key not set!\n' +
+    'Replace YOUR_ACTUAL_GEMINI_API_KEY_HERE in gemini.ts with your real key.\n' +
+    'Get one free at: https://aistudio.google.com/apikey'
   );
+} else {
+  console.log(`[Gemini] ✅ Key loaded (starts: ${GEMINI_API_KEY.slice(0, 8)}...)`);
 }
 
 const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
@@ -28,7 +33,7 @@ const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 let lastCallTime = 0;
 const COOLDOWN_MS = 4000;
 
-// ─── Firebase result cache: 10 minutes TTL ───────────────────────────────────
+// ─── Firebase result cache TTL: 10 minutes ───────────────────────────────────
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
 function hashImageData(base64: string): string {
@@ -79,22 +84,26 @@ export interface AudioAnalysisResult {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // analyzeFloodImage
-// Model: gemini-2.0-flash  (REST fetch — SDK hangs silently in browser)
-// Strategy: Firebase cache first → REST API → save result to cache
+//
+// Model: gemini-2.5-flash  (REST v1beta — confirmed working Feb 2026)
+// thinkingBudget: 0  → single-part response, no markdown wrapping
+// Strategy: Firebase cache → REST fetch → save result to cache
 // ─────────────────────────────────────────────────────────────────────────────
 export async function analyzeFloodImage(
   base64Image: string,
   mimeType: string
 ): Promise<FloodAnalysisResult> {
 
-  // ── Guard: API key ──────────────────────────────────────────────────────────
-  if (!GEMINI_API_KEY) {
+  // ── Key guard ───────────────────────────────────────────────────────────────
+  if (!GEMINI_API_KEY || GEMINI_API_KEY === 'YOUR_ACTUAL_GEMINI_API_KEY_HERE') {
     throw new Error(
-      'Gemini API key missing. Add VITE_GEMINI_API_KEY=your_key to your .env file and restart the dev server.'
+      'Gemini API key not configured.\n' +
+      'Open src/services/gemini.ts and replace YOUR_ACTUAL_GEMINI_API_KEY_HERE with your key.\n' +
+      'Get one free at: https://aistudio.google.com/apikey'
     );
   }
 
-  // ── Guard: cooldown ─────────────────────────────────────────────────────────
+  // ── Cooldown guard ──────────────────────────────────────────────────────────
   const now = Date.now();
   if (now - lastCallTime < COOLDOWN_MS) {
     const wait = Math.ceil((COOLDOWN_MS - (now - lastCallTime)) / 1000);
@@ -102,7 +111,7 @@ export async function analyzeFloodImage(
   }
   lastCallTime = now;
 
-  // ── Firebase cache (3s timeout, non-blocking) ───────────────────────────────
+  // ── Firebase cache check (3s timeout, non-blocking) ────────────────────────
   const cacheKey = hashImageData(base64Image);
   try {
     const snap = await Promise.race([
@@ -112,7 +121,7 @@ export async function analyzeFloodImage(
     if (snap && (snap as any).exists?.()) {
       const cached = (snap as any).val();
       if (now - cached.timestamp < CACHE_TTL_MS) {
-        console.log('[Gemini] ✅ Cache hit — no API call needed');
+        console.log('[Gemini] ✅ Cache hit — skipping API call');
         return cached.result as FloodAnalysisResult;
       }
     }
@@ -122,27 +131,31 @@ export async function analyzeFloodImage(
   const prompt = `You are a Malaysian flood risk AI analyst. Analyze this image.
 
 STEP 1: Is this image showing flood, water, or drainage conditions?
-- If NO (selfie, food, text document, indoor room, clear sky, etc):
-  Return isRelevant=false and explain in rejectionReason.
+If NO (selfie, food, document, indoor room, clear sky, etc):
+  → set isRelevant=false, explain in rejectionReason, return zero/empty defaults for all other fields.
 
-STEP 2: If YES, use these physical references to estimate depth:
+STEP 2: If YES, estimate depth using these physical anchors:
   Kerb = 0.15m | Door sill = 0.30m | Ankle = 0.15m | Knee = 0.50m
-  Waist = 1.0m  | Car bonnet = 1.0m | Car roof = 1.4m
+  Waist = 1.0m | Car bonnet = 1.0m | Car roof = 1.4m
 
-SEVERITY (riskScore):
-  1-2 = NORMAL (dry/damp)   3-4 = MINOR (ankle)   5-6 = MODERATE (knee)
-  7-8 = SEVERE (waist/bonnet)   9-10 = CRITICAL (roof/2nd floor)
+SEVERITY scale (riskScore 1-10):
+  1-2 = NORMAL (dry/damp surface)
+  3-4 = MINOR  (ankle-deep, <0.2m)
+  5-6 = MODERATE (knee-deep, 0.2-0.5m)
+  7-8 = SEVERE (waist/bonnet, 0.5-1.2m)
+  9-10 = CRITICAL (car roof or 2nd floor flooded)
 
-HARD RULES — never go below these:
-  Car bonnet submerged → riskScore minimum 7
-  Car roof submerged   → riskScore minimum 8
-  Car fully submerged  → riskScore minimum 9
+HARD FLOOR RULES — never score below these:
+  Car bonnet submerged → riskScore MINIMUM 7
+  Car roof submerged   → riskScore MINIMUM 8
+  Car fully submerged  → riskScore MINIMUM 9
 
-Return ONLY this JSON. No markdown, no code fences, no explanation:
-{"isRelevant":true,"rejectionReason":"","estimatedDepth":"~0.3m","detectedHazards":"Submerged manholes, debris","passability":"Pedestrians:Caution|Motorcycles:Avoid|Cars:Avoid|4x4:Caution","aiConfidence":80,"directive":"Water is knee-deep. Avoid crossing. Move to higher ground.","riskScore":5,"severity":"MODERATE","waterDepth":"Knee-Deep (0.3-0.5m)","waterCurrent":"Slow","infrastructureStatus":"Roads partially submerged","humanRisk":"Moderate","eventType":"Flash Flood","estimatedStartTime":"Already in progress","estimatedEndTime":"${new Date(Date.now() + 7200000).toISOString()}"}`;
+YOU MUST return ONLY the JSON object below. No markdown. No code fences. No text before or after.
 
-  // ── REST API call (most reliable for browser + image upload) ────────────────
-  const REST_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+{"isRelevant":true,"rejectionReason":"","estimatedDepth":"~0.3m","detectedHazards":"Submerged manholes, floating debris","passability":"Pedestrians:Caution|Motorcycles:Avoid|Cars:Avoid|4x4:Caution","aiConfidence":80,"directive":"Water is knee-deep. Avoid crossing. Move to higher ground.","riskScore":5,"severity":"MODERATE","waterDepth":"Knee-Deep (0.3-0.5m)","waterCurrent":"Slow","infrastructureStatus":"Roads partially submerged","humanRisk":"Moderate","eventType":"Flash Flood","estimatedStartTime":"Already in progress","estimatedEndTime":"${new Date(Date.now() + 7200000).toISOString()}"}`;
+
+  // ── REST API — gemini-2.5-flash on v1beta (confirmed working with new keys) ──
+  const REST_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
   const body = {
     contents: [{
@@ -152,16 +165,18 @@ Return ONLY this JSON. No markdown, no code fences, no explanation:
       ]
     }],
     generationConfig: {
-      temperature: 0.1,     // deterministic → consistent JSON output
-      maxOutputTokens: 400, // our JSON needs ~300 tokens max
+      temperature: 0.1,
+      maxOutputTokens: 512,
       topP: 0.8,
-      topK: 10
+      topK: 10,
+      thinkingConfig: {
+        thinkingBudget: 0  // disable thinking — faster, no multi-part split
+      }
     }
   };
 
-  // 30s abort controller
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30000);
+  const timer = setTimeout(() => controller.abort(), 35000);
 
   let response: Response;
   try {
@@ -174,7 +189,7 @@ Return ONLY this JSON. No markdown, no code fences, no explanation:
   } catch (err: any) {
     clearTimeout(timer);
     if (err?.name === 'AbortError') {
-      throw new Error('Request timed out. Try a smaller/clearer image and tap Retry.');
+      throw new Error('Request timed out. Try a smaller image and tap Retry.');
     }
     throw new Error('Network error. Check your internet connection and tap Retry.');
   }
@@ -188,34 +203,64 @@ Return ONLY this JSON. No markdown, no code fences, no explanation:
       errMsg = (errJson as any)?.error?.message || errMsg;
     } catch { /* ignore */ }
 
+    console.error(`[Gemini] HTTP ${response.status}:`, errMsg);
+
     if (response.status === 429) {
-      throw new Error('Quota exceeded. Wait 60 seconds and tap Retry.\nOr enable billing at aistudio.google.com for unlimited usage.');
+      throw new Error('Quota exceeded. Wait 60 seconds and tap Retry.\nFor unlimited use, enable billing at aistudio.google.com.');
     }
     if (response.status === 400 && errMsg.toLowerCase().includes('api key')) {
-      throw new Error('Invalid API key. Check VITE_GEMINI_API_KEY in your .env file.');
+      throw new Error('Invalid API key. Check VITE_GEMINI_API_KEY in your .env or the hardcoded key in gemini.ts.');
     }
     if (response.status === 401 || response.status === 403) {
       throw new Error('API key rejected. Verify it is active at aistudio.google.com/apikey');
     }
+    if (response.status === 404) {
+      throw new Error('Gemini model not found (404). The model name in gemini.ts may be wrong.');
+    }
     throw new Error(`Gemini error (${response.status}): ${errMsg}`);
   }
 
-  // ── Parse JSON from response ────────────────────────────────────────────────
+  // ── Parse response ──────────────────────────────────────────────────────────
   const json = await response.json();
-  const rawText: string = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  console.log('[Gemini] Candidates count:', json?.candidates?.length ?? 0);
+
+  // gemini-2.5-flash may return multiple parts (thoughts + answer) — find the last text part
+  const parts: any[] = json?.candidates?.[0]?.content?.parts ?? [];
+  const rawText: string = [...parts].reverse().find((p: any) => p.text && !p.thought)?.text ?? parts[0]?.text ?? '';
+  console.log('[Gemini] Parts count:', parts.length, '| Raw text (first 400 chars):', rawText.slice(0, 400));
 
   if (!rawText) {
     const blockReason = json?.promptFeedback?.blockReason;
-    if (blockReason) throw new Error(`Image blocked: ${blockReason}. Try a different image.`);
+    const finishReason = json?.candidates?.[0]?.finishReason;
+    console.error('[Gemini] Empty text. blockReason:', blockReason, 'finishReason:', finishReason);
+
+    if (blockReason) throw new Error(`Image blocked by safety filter: ${blockReason}. Try a different image.`);
+    if (finishReason === 'MAX_TOKENS') throw new Error('Response was too long. Tap Retry.');
     throw new Error('Empty AI response. Tap Retry.');
   }
 
-  const match = rawText.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('Could not read AI response. Tap Retry.');
+  // Strip markdown code fences if model added them
+  const stripped = rawText
+    .replace(/^```(?:json)?\s*/im, '')
+    .replace(/\s*```\s*$/im, '')
+    .trim();
 
-  const parsed = JSON.parse(match[0]) as FloodAnalysisResult;
+  // Extract outermost JSON object
+  const match = stripped.match(/\{[\s\S]*\}/);
+  if (!match) {
+    console.error('[Gemini] No JSON found in response:', stripped);
+    throw new Error('Could not read AI response. Tap Retry.');
+  }
 
-  // ── Save to cache (fire-and-forget) ────────────────────────────────────────
+  let parsed: FloodAnalysisResult;
+  try {
+    parsed = JSON.parse(match[0]) as FloodAnalysisResult;
+  } catch (parseErr) {
+    console.error('[Gemini] JSON.parse failed on:', match[0]);
+    throw new Error('AI response was malformed. Tap Retry.');
+  }
+
+  // ── Cache result (fire-and-forget) ─────────────────────────────────────────
   set(ref(rtdb, `analysisCache/${cacheKey}`), {
     result: parsed,
     timestamp: Date.now()
@@ -226,8 +271,8 @@ Return ONLY this JSON. No markdown, no code fences, no explanation:
 
 // ─────────────────────────────────────────────────────────────────────────────
 // fetchLiveWeatherAndCCTV
-// Alert Menu: live weather + flood alerts per Malaysian state
-// Uses Gemini 2.0 Flash with Google Search grounding
+// Real-time weather + flood alerts per Malaysian state
+// Uses gemini-2.0-flash with Google Search grounding (confirmed available)
 // ─────────────────────────────────────────────────────────────────────────────
 export async function fetchLiveWeatherAndCCTV(
   state: string,
@@ -240,10 +285,10 @@ export async function fetchLiveWeatherAndCCTV(
     isRaining: false,
     floodRisk: "Low",
     severity: 1,
-    aiAnalysisText: `Live weather data temporarily unavailable for ${state}. Check local news for updates.`
+    aiAnalysisText: `Live weather data temporarily unavailable for ${state}. Check local news for flood updates.`
   };
 
-  if (!GEMINI_API_KEY) return fallback;
+  if (!GEMINI_API_KEY || GEMINI_API_KEY === 'YOUR_ACTUAL_GEMINI_API_KEY_HERE') return fallback;
 
   try {
     const response = await ai.models.generateContent({
@@ -261,9 +306,9 @@ Based on live search results respond ONLY with this JSON (no markdown, no code f
     });
 
     const raw = response.text?.trim() ?? '';
-    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('No JSON found in weather response');
+    if (!jsonMatch) throw new Error('No JSON in weather response');
 
     return JSON.parse(jsonMatch[0]) as LiveWeatherAnalysis;
 
@@ -272,11 +317,11 @@ Based on live search results respond ONLY with this JSON (no markdown, no code f
     const status = error?.status ?? error?.code ?? 0;
 
     if (status === 429 || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota') || msg.includes('free_tier')) {
-      console.warn(`[Weather] Rate limit hit for ${state} — using fallback`);
+      console.warn(`[Weather] Rate limit for ${state} — using fallback`);
       return fallback;
     }
     if (retries > 0) {
-      console.warn(`[Weather] Retrying ${state}, attempts left: ${retries - 1}`);
+      console.warn(`[Weather] Retrying ${state}, ${retries - 1} attempts left`);
       await new Promise(r => setTimeout(r, 2000));
       return fetchLiveWeatherAndCCTV(state, retries - 1);
     }
@@ -287,7 +332,7 @@ Based on live search results respond ONLY with this JSON (no markdown, no code f
 
 // ─────────────────────────────────────────────────────────────────────────────
 // analyzeAudio
-// Detects flood risk from ambient sound (rain, rushing water, sirens, thunder)
+// Flood risk detection from ambient sound (rain, rushing water, sirens, thunder)
 // ─────────────────────────────────────────────────────────────────────────────
 export async function analyzeAudio(
   base64Audio: string,
@@ -300,11 +345,11 @@ export async function analyzeAudio(
     analysis: 'Audio analysis unavailable. Please try again later.'
   };
 
-  if (!GEMINI_API_KEY) return fallback;
+  if (!GEMINI_API_KEY || GEMINI_API_KEY === 'YOUR_ACTUAL_GEMINI_API_KEY_HERE') return fallback;
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: "gemini-1.5-flash",
       contents: [
         {
           role: "user",

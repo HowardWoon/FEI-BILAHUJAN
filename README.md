@@ -50,7 +50,7 @@ BILAHUJAN is built by a four-person multidisciplinary team, each contributing a 
 | **Howard Woon Hao Zhe** | Lead Software Engineer & AI Integrator — full technical build, Gemini integration, Firebase pipeline, Google Maps overlay, all real-time application logic |
 | **Sanjay Mukojima Ravindran** | Front-End Engineer & UX Architect — UI design execution, technical documentation, human-centred design under high-stress conditions |
 | **Wong En Sheng** | Marketing Lead & Pitching Strategist — pitching video, marketing materials, public-facing narrative |
-| **Ng Tze Fung** | Technical Documentation Lead & Presentation Designer — system documentation, judge-facing slides, written and visual deliverables |
+| **Ng Tze Fhung** | Technical Documentation Lead & Presentation Designer — system documentation, judge-facing slides, written and visual deliverables |
 
 ---
 
@@ -410,7 +410,7 @@ Every citizen report simultaneously:
 
 <br>
 
-**SDG 11** · Sustainable Cities &nbsp;|&nbsp; **SDG 13** · Climate Action &nbsp;|&nbsp; **SDG 17** · Partnerships
+**SDG 11** · Sustainable Cities &nbsp;|&nbsp; **SDG 13** · Climate Action
 
 <br>
 
