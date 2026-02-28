@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "deploy": "vite build && firebase deploy --only hosting",
     "deploy:watch": "chokidar \"src/**/*\" \"index.html\" -c \"npm run build && firebase deploy\" --debounce 3000 --initial"
   },
   "dependencies": {

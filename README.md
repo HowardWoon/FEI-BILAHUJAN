@@ -307,7 +307,7 @@ Rejection        │
 
 ```bash
 # Clone the repository
-git clone https://github.com/howardwoonhz06/bilahujan.git
+git clone https://github.com/HowardWoon/FEI-BILAHUJAN.git
 cd bilahujan
 
 # Install dependencies
@@ -317,15 +317,22 @@ npm install
 Create a `.env` file in the project root:
 
 ```env
+VITE_GEMINI_API_KEY=your_gemini_api_key
 GEMINI_API_KEY=your_gemini_api_key
 VITE_GOOGLE_MAPS_API_KEY=your_google_maps_key
+APP_URL=http://localhost:3000
 ```
+
+> ⚠️ **Never commit `.env` to Git.** It is already listed in `.gitignore`. Google automatically scans public repos and **instantly revokes** any API key it detects. Get a free Gemini key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey). Both `VITE_GEMINI_API_KEY` and `GEMINI_API_KEY` must be set — Vite requires the `VITE_` prefix to expose variables to the browser bundle.
 
 ```bash
 # Start local development server
 npm run dev
 
-# Production build and deploy
+# Build and deploy to Firebase Hosting in one command
+npm run deploy
+
+# Or run the two steps separately
 npm run build
 firebase deploy --only hosting
 ```

@@ -1,7 +1,7 @@
 import { readFileSync } from 'fs';
 import https from 'https';
 
-const KEY = "AIzaSyAmZGP5zA3T8m3SlXW27NMyQSBvMtM-i7k";
+const KEY = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
 
 // Download a real public JPEG image
 function downloadImage(url) {

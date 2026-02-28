@@ -3,25 +3,23 @@ import { ref, get, set } from "firebase/database";
 import { rtdb } from "../firebase";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// API KEY — TWO PROBLEMS FIXED HERE:
+// API KEY
 //
-// Problem 1 (localhost):  process.env doesn't work in Vite browser builds.
-//                         Must use import.meta.env.VITE_GEMINI_API_KEY
-//
-// Problem 2 (deployed site):  .env is NEVER included in Firebase Hosting.
-//                              The key must be hardcoded or injected at build time.
-//
-// SOLUTION: Try import.meta.env first, fall back to HARDCODED_KEY.
+// Set VITE_GEMINI_API_KEY in your .env file (never commit .env to Git).
+// For Firebase Hosting deployments, set the key during the build step:
+//   VITE_GEMINI_API_KEY=your_key npm run build
 // ─────────────────────────────────────────────────────────────────────────────
-const HARDCODED_KEY = 'AIzaSyAmZGP5zA3T8m3SlXW27NMyQSBvMtM-i7k'; // ← replace with your real key
 const GEMINI_API_KEY: string =
-  (import.meta.env.VITE_GEMINI_API_KEY as string) || HARDCODED_KEY;
+  (import.meta.env.VITE_GEMINI_API_KEY as string) || '';
 
-if (!GEMINI_API_KEY || GEMINI_API_KEY === 'YOUR_ACTUAL_GEMINI_API_KEY_HERE') {
+// A valid Google API key always starts with "AIza" and is 39 chars long
+const isKeyValid = (k: string) => typeof k === 'string' && k.startsWith('AIza') && k.length >= 35;
+
+if (!isKeyValid(GEMINI_API_KEY)) {
   console.error(
-    '[Gemini] ❌ API key not set!\n' +
-    'Replace YOUR_ACTUAL_GEMINI_API_KEY_HERE in gemini.ts with your real key.\n' +
-    'Get one free at: https://aistudio.google.com/apikey'
+    '[Gemini] ❌ API key not set or invalid!\n' +
+    'Add VITE_GEMINI_API_KEY=your_key to your .env file.\n' +
+    'Get a free key at: https://aistudio.google.com/apikey'
   );
 } else {
   console.log(`[Gemini] ✅ Key loaded (starts: ${GEMINI_API_KEY.slice(0, 8)}...)`);
@@ -95,11 +93,11 @@ export async function analyzeFloodImage(
 ): Promise<FloodAnalysisResult> {
 
   // ── Key guard ───────────────────────────────────────────────────────────────
-  if (!GEMINI_API_KEY || GEMINI_API_KEY === 'YOUR_ACTUAL_GEMINI_API_KEY_HERE') {
+  if (!isKeyValid(GEMINI_API_KEY)) {
     throw new Error(
       'Gemini API key not configured.\n' +
-      'Open src/services/gemini.ts and replace YOUR_ACTUAL_GEMINI_API_KEY_HERE with your key.\n' +
-      'Get one free at: https://aistudio.google.com/apikey'
+      'Add VITE_GEMINI_API_KEY=your_key to your .env file, then restart the dev server.\n' +
+      'Get a free key at: https://aistudio.google.com/apikey'
     );
   }
 
@@ -209,10 +207,10 @@ YOU MUST return ONLY the JSON object below. No markdown. No code fences. No text
       throw new Error('Quota exceeded. Wait 60 seconds and tap Retry.\nFor unlimited use, enable billing at aistudio.google.com.');
     }
     if (response.status === 400 && errMsg.toLowerCase().includes('api key')) {
-      throw new Error('Invalid API key. Check VITE_GEMINI_API_KEY in your .env or the hardcoded key in gemini.ts.');
+      throw new Error('Invalid API key. Add a valid VITE_GEMINI_API_KEY to your .env file.');
     }
     if (response.status === 401 || response.status === 403) {
-      throw new Error('API key rejected. Verify it is active at aistudio.google.com/apikey');
+      throw new Error('API key rejected — it may be revoked or invalid.\nCreate a new key at aistudio.google.com/apikey and add it to your .env file.');
     }
     if (response.status === 404) {
       throw new Error('Gemini model not found (404). The model name in gemini.ts may be wrong.');
@@ -288,7 +286,7 @@ export async function fetchLiveWeatherAndCCTV(
     aiAnalysisText: `Live weather data temporarily unavailable for ${state}. Check local news for flood updates.`
   };
 
-  if (!GEMINI_API_KEY || GEMINI_API_KEY === 'YOUR_ACTUAL_GEMINI_API_KEY_HERE') return fallback;
+  if (!isKeyValid(GEMINI_API_KEY)) return fallback;
 
   try {
     const response = await ai.models.generateContent({
@@ -345,7 +343,7 @@ export async function analyzeAudio(
     analysis: 'Audio analysis unavailable. Please try again later.'
   };
 
-  if (!GEMINI_API_KEY || GEMINI_API_KEY === 'YOUR_ACTUAL_GEMINI_API_KEY_HERE') return fallback;
+  if (!isKeyValid(GEMINI_API_KEY)) return fallback;
 
   try {
     const response = await ai.models.generateContent({
