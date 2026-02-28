@@ -140,16 +140,27 @@ export default function MapScreen({ onScanClick, onTabChange, initialShowLocatio
             if (status === 'OK' && results && results[0]) {
               // Try to get a specific locality or sublocality
               const addressComponents = results[0].address_components;
+              const sublocality = addressComponents.find(c => c.types.includes('sublocality_level_1') || c.types.includes('sublocality'))?.long_name;
               const locality = addressComponents.find(c => c.types.includes('locality'))?.long_name;
-              const sublocality = addressComponents.find(c => c.types.includes('sublocality'))?.long_name;
+              const district = addressComponents.find(c => c.types.includes('administrative_area_level_2'))?.long_name;
+              const state = addressComponents.find(c => c.types.includes('administrative_area_level_1'))?.long_name;
               
+              let displayName: string;
               if (sublocality && locality) {
-                setCurrentAddress(`Current: ${sublocality}, ${locality}`);
+                displayName = `${sublocality}, ${locality}`;
               } else if (locality) {
-                setCurrentAddress(`Current: ${locality}`);
+                displayName = locality;
+              } else if (district) {
+                displayName = district;
+              } else if (state) {
+                displayName = state;
               } else {
-                setCurrentAddress(`Current: ${results[0].formatted_address.split(',')[0]}`);
+                // Skip leading number tokens (e.g. street numbers) to get a meaningful name
+                const parts = results[0].formatted_address.split(',');
+                const meaningful = parts.find(p => isNaN(Number(p.trim())));
+                displayName = meaningful ? meaningful.trim() : 'My Location';
               }
+              setCurrentAddress(`Current: ${displayName}`);
             } else {
               setCurrentAddress('Current: Kuala Lumpur (Default)');
             }
