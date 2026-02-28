@@ -138,6 +138,17 @@ export default function AlertsScreen({ onTabChange, onAlertClick, onScanClick }:
         }
       } // end statewide
 
+      // Dispatch notifications using stateGroups (computed from all zones in component state —
+      // includes static pre-loaded zones — independent of Firebase cache overwrite timing).
+      stateGroups.forEach(([, data]) => {
+        if (data.maxSeverity >= 4) {
+          const topZone = [...data.zones].sort((a, b) => b.severity - a.severity)[0];
+          if (topZone) {
+            window.dispatchEvent(new CustomEvent('floodAlert', { detail: { zoneId: topZone.id, zone: topZone } }));
+          }
+        }
+      });
+
       setRefreshStatus('Updated!');
       setTimeout(() => setRefreshStatus(null), 2000);
     } catch (error) {

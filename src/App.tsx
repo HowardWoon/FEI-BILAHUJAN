@@ -56,8 +56,11 @@ export default function App() {
   const notifiedStates = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    // When a refresh starts, clear the seen-states set so new notifications can fire
-    const handleClear = () => { notifiedStates.current.clear(); };
+    // When a refresh starts, clear the seen-states set AND existing banners so new notifications can fire
+    const handleClear = () => {
+      notifiedStates.current.clear();
+      setNotifications([]);
+    };
     window.addEventListener('clearFloodNotifications', handleClear);
     return () => window.removeEventListener('clearFloodNotifications', handleClear);
   }, []);
