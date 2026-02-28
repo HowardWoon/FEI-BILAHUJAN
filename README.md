@@ -25,6 +25,18 @@
 
 <br>
 
+### 📊 Live Platform Stats *(as of Feb 28, 2026)*
+
+| Metric | Value |
+|:---|:---|
+| 🚀 Last Deployed | Feb 28, 2026 · 5:27 PM |
+| 📥 Hosting Downloads (7-day) | **26.3 MB** |
+| 👥 Daily Active Users | **9** |
+| 📈 Day 1 Retention | **35.7%** |
+| ☁️ Firebase Plan | Spark (Free Tier) |
+
+<br>
+
 </div>
 
 ---
