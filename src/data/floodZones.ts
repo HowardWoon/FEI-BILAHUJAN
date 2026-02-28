@@ -148,8 +148,6 @@ export const createZone = (
 };
 
 let floodZonesCache: Record<string, FloodZone> | null = null;
-// Track which zone IDs have already triggered a notification this session
-const notifiedZoneIds = new Set<string>();
 
 export const getFloodZones = (): Record<string, FloodZone> => {
   if (!floodZonesCache) {
@@ -238,11 +236,6 @@ export const addFloodZone = (zone: FloodZone) => {
         notifiedDepts: zone.notifiedDepts ? Array.from(new Set([...(existing.notifiedDepts || []), ...zone.notifiedDepts])) : existing.notifiedDepts
       };
       floodZonesCache[existingZoneId] = updatedZone;
-      // Mark as notified locally so Firebase onValue doesn't double-notify this client
-      if (updatedZone.severity >= 4) {
-        notifiedZoneIds.add(existingZoneId);
-        notifiedZoneIds.add(`state_${updatedZone.state}`);
-      }
       
       // Save to Firebase
       saveFloodZone(updatedZone).catch(err => 
@@ -253,11 +246,6 @@ export const addFloodZone = (zone: FloodZone) => {
     } else {
       // Add as a new zone
       floodZonesCache[zone.id] = zone;
-      // Mark as notified locally so Firebase onValue doesn't double-notify this client
-      if (zone.severity >= 4) {
-        notifiedZoneIds.add(zone.id);
-        notifiedZoneIds.add(`state_${zone.state}`);
-      }
       
       // Save to Firebase
       saveFloodZone(zone).catch(err => 
@@ -280,42 +268,15 @@ export const useFloodZones = () => {
     window.addEventListener('floodZonesUpdated', handleUpdate);
     window.addEventListener('floodAlert', handleUpdate);
 
-    // Listen to Firebase RTDB liveZones for cross-device / cross-tab sync
-    // Replace the entire cache with Firebase data so localhost always mirrors the website exactly
+    // Listen to Firebase RTDB liveZones for cross-device / cross-tab sync — data only, no notifications
     const liveZonesRef = ref(rtdb, 'liveZones');
     const unsubscribeFirebase = onValue(liveZonesRef, (snapshot) => {
       if (snapshot.exists()) {
         const firebaseZones = snapshot.val() as Record<string, FloodZone>;
-        // Completely replace local cache with Firebase data — no merging of local defaults
+        // Completely replace local cache with Firebase data
         floodZonesCache = firebaseZones;
         setZones({ ...floodZonesCache });
-
-        // Dispatch ONE floodAlert per state (highest severity zone only)
-        // to prevent duplicate notifications when multiple zones exist for the same state
-        const bestPerState = new Map<string, { id: string; zone: FloodZone }>();
-        Object.entries(firebaseZones).forEach(([id, zone]) => {
-          if (zone.severity >= 4) {
-            const existing = bestPerState.get(zone.state);
-            if (!existing || zone.severity > existing.zone.severity) {
-              bestPerState.set(zone.state, { id, zone });
-            }
-          }
-        });
-
-        bestPerState.forEach(({ id, zone }) => {
-          // Use state as the notification key so all zone IDs for that state are covered
-          const stateKey = `state_${zone.state}`;
-          if (!notifiedZoneIds.has(stateKey)) {
-            notifiedZoneIds.add(stateKey);
-            // Also mark all individual zone IDs for this state so addFloodZone won't re-notify
-            Object.entries(firebaseZones).forEach(([zid, z]) => {
-              if (z.state === zone.state) notifiedZoneIds.add(zid);
-            });
-            window.dispatchEvent(new CustomEvent('floodAlert', { detail: { zoneId: id, zone } }));
-          }
-        });
-
-        // Also notify components that zones were updated
+        // Notify components that zone data changed (UI update only, no alert popups)
         window.dispatchEvent(new CustomEvent('floodZonesUpdated'));
       }
       // If Firebase has no data yet, keep the local defaults as fallback

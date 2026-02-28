@@ -56,6 +56,13 @@ export default function App() {
   const notifiedStates = useRef<Set<string>>(new Set());
 
   useEffect(() => {
+    // When a refresh starts, clear the seen-states set so new notifications can fire
+    const handleClear = () => { notifiedStates.current.clear(); };
+    window.addEventListener('clearFloodNotifications', handleClear);
+    return () => window.removeEventListener('clearFloodNotifications', handleClear);
+  }, []);
+
+  useEffect(() => {
     const handleFloodAlert = (e: Event) => {
       const customEvent = e as CustomEvent;
       const { zoneId, zone } = customEvent.detail;

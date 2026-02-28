@@ -39,6 +39,8 @@ export default function AlertsScreen({ onTabChange, onAlertClick, onScanClick }:
 
   const handleRefreshLiveData = async () => {
     if (isRefreshing) return; // prevent double-run
+    // Clear existing notifications so fresh ones can appear for this refresh cycle
+    window.dispatchEvent(new CustomEvent('clearFloodNotifications'));
     setIsRefreshing(true);
 
     const allStatesList = [
