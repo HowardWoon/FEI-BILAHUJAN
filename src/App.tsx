@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import SplashScreen from './screens/SplashScreen';
 import MapScreen from './screens/MapScreen';
 import CameraScreen from './screens/CameraScreen';
@@ -52,16 +52,18 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
+  // Track which states already have a notification — prevents any duplicate regardless of event timing
+  const notifiedStates = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     const handleFloodAlert = (e: Event) => {
       const customEvent = e as CustomEvent;
       const { zoneId, zone } = customEvent.detail;
+      // One notification per state only — if state already notified, skip entirely
+      if (notifiedStates.current.has(zone.state)) return;
+      notifiedStates.current.add(zone.state);
       const id = Date.now();
-      // Replace existing notification for the same state, don't stack duplicates
-      setNotifications(prev => {
-        const filtered = prev.filter(n => n.zone.state !== zone.state);
-        return [...filtered, { id, zoneId, zone }];
-      });
+      setNotifications(prev => [...prev, { id, zoneId, zone }]);
     };
     window.addEventListener('floodAlert', handleFloodAlert);
     return () => window.removeEventListener('floodAlert', handleFloodAlert);
@@ -179,7 +181,10 @@ export default function App() {
         <div className="absolute top-0 left-0 right-0 z-[100] p-3 flex flex-col gap-2 pointer-events-none">
           <div className="flex justify-end mb-2 pointer-events-auto">
             <button
-              onClick={() => setNotifications([])}
+              onClick={() => {
+                notifications.forEach(n => notifiedStates.current.delete(n.zone.state));
+                setNotifications([]);
+              }}
               className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold px-4 py-1.5 rounded-xl shadow border border-slate-300 text-sm transition-all"
             >
               Clear All
@@ -203,6 +208,7 @@ export default function App() {
               <div key={notification.id} className="pointer-events-auto animate-[slideDown_0.3s_ease-out]">
                 <div
                   onClick={() => {
+                    notifiedStates.current.delete(notification.zone.state);
                     setSelectedAlertId(notification.zoneId);
                     setCurrentScreen('alert-detail');
                     setNotifications(prev => prev.filter(n => n.id !== notification.id));
@@ -217,6 +223,7 @@ export default function App() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
+                      notifiedStates.current.delete(notification.zone.state);
                       setNotifications(prev => prev.filter(n => n.id !== notification.id));
                     }}
                     className="w-6 h-6 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:bg-slate-200 shrink-0"

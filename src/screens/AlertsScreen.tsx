@@ -120,7 +120,10 @@ export default function AlertsScreen({ onTabChange, onAlertClick, onScanClick }:
               newZone.aiAnalysisText = liveData.aiAnalysisText;
               newZone.eventType = liveData.isRaining ? 'Heavy Rain' : 'Normal';
               addFloodZone(newZone);
-              window.dispatchEvent(new CustomEvent('floodAlert', { detail: { zoneId: newZoneId, zone: newZone } }));
+              // Only notify for zones with actual flood risk
+              if (liveData.severity >= 4) {
+                window.dispatchEvent(new CustomEvent('floodAlert', { detail: { zoneId: newZoneId, zone: newZone } }));
+              }
             } catch (err) {
               console.error(`Failed to fetch data for ${state}:`, err);
             }
