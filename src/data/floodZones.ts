@@ -147,48 +147,96 @@ export const createZone = (
   };
 };
 
+/**
+ * Reconcile the official live-weather severity with community user-report severity
+ * into one authoritative severity for a state/location.
+ *
+ * Rules:
+ *  1. No user reports         → live weather alone (source of truth).
+ *  2. Both agree (flood / clear) → weighted avg: live 60 %, user 40 %.
+ *  3. Live=flood, user=clear  → live weather wins (official data).
+ *  4. Live=clear, user=flood + is raining
+ *                             → rain corroborates report (flash flood / drainage)
+ *                             → weight: live 30 %, user 70 %.
+ *  5. Live=clear, user=flood + NO rain
+ *                             → possible stale upload or localised drainage issue;
+ *                             → average both but cap at 6 (RISING WATER max)
+ *                               so we never show FLOOD NOW without weather confirmation.
+ */
+export const reconcileStateSeverity = (
+  liveSeverity: number,
+  userMaxSeverity: number,
+  isRaining: boolean,
+  userReportCount: number
+): number => {
+  if (userReportCount === 0) return liveSeverity;
+
+  const liveFlooding = liveSeverity >= 4;
+  const userFlooding = userMaxSeverity >= 4;
+
+  // Both signals agree
+  if (liveFlooding === userFlooding) {
+    return Math.round(liveSeverity * 0.6 + userMaxSeverity * 0.4);
+  }
+
+  // Official weather says flood, community says clear → trust official data
+  if (liveFlooding && !userFlooding) {
+    return liveSeverity;
+  }
+
+  // Community says flood, live weather says clear
+  if (isRaining) {
+    // Rainfall corroborates the user report → weight toward community evidence
+    return Math.round(liveSeverity * 0.3 + userMaxSeverity * 0.7);
+  } else {
+    // No rain → acknowledge but cap at RISING WATER (6); don't alarm with FLOOD NOW
+    return Math.min(Math.round(liveSeverity * 0.5 + userMaxSeverity * 0.5), 6);
+  }
+};
+
 let floodZonesCache: Record<string, FloodZone> | null = null;
 
 export const getFloodZones = (): Record<string, FloodZone> => {
   if (!floodZonesCache) {
+    // All zones start at severity 0 (CLEAR). Real severity is set only by live AI refresh.
     floodZonesCache = {
-      kl: createZone('kl', 'Kuala Lumpur', 'Masjid Jamek', 'Kuala Lumpur', 'Federal Territory', 3.14, 101.69, 8, 'Heavy rain expected. High risk of flash floods in city center.', 0.04, ['Weather API', 'CCTV Live', 'User Reports']),
-      shahAlam: createZone('shahAlam', 'Shah Alam', 'Taman Sri Muda', 'Selangor', 'Central Region', 3.07, 101.51, 9, 'Critical water levels at Taman Sri Muda. Evacuation standby.', 0.05, ['CCTV Live', 'Gov Sensors']),
-      kajang: createZone('kajang', 'Kajang', 'Taman Jenaris', 'Selangor', 'Central Region', 2.99, 101.79, 8, 'River levels critical. Immediate evacuation advised for low-lying areas.', 0.03, ['User Reports', 'Weather API']),
-      seriKembangan: createZone('seriKembangan', 'Seri Kembangan', 'Jalan Besar', 'Selangor', 'Central Region', 3.03, 101.71, 3, 'Light showers. Drainage systems operating normally.', 0.02, ['Weather API']),
-      seremban: createZone('seremban', 'Seremban', 'Taman Ampangan', 'Negeri Sembilan', 'Central Region', 2.72, 101.94, 5, 'Moderate rain. Localized flash floods possible.', 0.04, ['Weather API', 'User Reports']),
-      jb: createZone('jb', 'Johor Bahru', 'Jalan Wong Ah Fook', 'Johor', 'Southern Region', 1.49, 103.74, 2, 'Clear skies. No flood risk detected.', 0.05, ['Weather API']),
-      batu_pahat: createZone('batu_pahat', 'Batu Pahat', 'Pekan Batu Pahat', 'Johor', 'Southern Region', 1.85, 102.93, 4, 'Moderate rain. Monitor low-lying areas near Sungai Batu Pahat.', 0.04, ['Weather API', 'User Reports']),
-      muar: createZone('muar', 'Muar', 'Pagoh', 'Johor', 'Southern Region', 2.04, 102.57, 3, 'Light rain. Drainage normal.', 0.03, ['Weather API']),
-      melaka: createZone('melaka', 'Melaka', 'Banda Hilir', 'Melaka', 'Southern Region', 2.19, 102.25, 2, 'Normal weather conditions.', 0.04, ['Weather API']),
-      alor_gajah: createZone('alor_gajah', 'Alor Gajah', 'Pekan Alor Gajah', 'Melaka', 'Southern Region', 2.38, 102.21, 3, 'Cloudy, isolated showers expected.', 0.03, ['Weather API']),
-      kuantan: createZone('kuantan', 'Kuantan', 'Sungai Lembing', 'Pahang', 'East Coast', 3.81, 103.32, 6, 'Continuous rain warning. Monitor river levels.', 0.06, ['Gov Sensors', 'Weather API']),
-      temerloh: createZone('temerloh', 'Temerloh', 'Pekan Temerloh', 'Pahang', 'East Coast', 3.45, 102.42, 5, 'River Pahang rising. Moderate risk in low-lying areas.', 0.05, ['Gov Sensors']),
-      cameron: createZone('cameron', 'Cameron Highlands', 'Tanah Rata', 'Pahang', 'East Coast', 4.46, 101.38, 4, 'Persistent drizzle and mist. Landslide risk on hilly terrain.', 0.04, ['Weather API']),
-      kt: createZone('kt', 'Kuala Terengganu', 'Pantai Batu Buruk', 'Terengganu', 'East Coast', 5.33, 103.15, 7, 'Heavy monsoon rain. Coastal areas at risk.', 0.05, ['Weather API', 'CCTV Live']),
-      dungun: createZone('dungun', 'Dungun', 'Paka', 'Terengganu', 'East Coast', 4.75, 103.42, 6, 'Coastal flooding risk. Heavy rainfall east of town.', 0.04, ['Weather API']),
-      kb: createZone('kb', 'Kota Bharu', 'Pasir Mas', 'Kelantan', 'East Coast', 6.12, 102.23, 9, 'Severe monsoon flooding expected. Red alert issued.', 0.07, ['Gov Sensors', 'CCTV Live', 'User Reports']),
-      tanah_merah: createZone('tanah_merah', 'Tanah Merah', 'Pekan Tanah Merah', 'Kelantan', 'East Coast', 5.80, 102.15, 8, 'Critical: River Kelantan at danger level. Evacuations underway.', 0.05, ['Gov Sensors', 'User Reports']),
-      gua_musang: createZone('gua_musang', 'Gua Musang', 'Bandar Gua Musang', 'Kelantan', 'East Coast', 4.88, 101.97, 6, 'Upstream water level rising fast. Heavy rain continues.', 0.04, ['Gov Sensors']),
-      ipoh: createZone('ipoh', 'Ipoh', 'Taman Canning', 'Perak', 'Northern Region', 4.59, 101.09, 3, 'Cloudy with isolated showers.', 0.04, ['Weather API']),
-      taiping: createZone('taiping', 'Taiping', 'Kamunting', 'Perak', 'Northern Region', 4.85, 100.74, 4, 'Persistent rain. Drains at 60% capacity. Stay alert.', 0.04, ['Weather API', 'User Reports']),
-      teluk_intan: createZone('teluk_intan', 'Teluk Intan', 'Pekan Teluk Intan', 'Perak', 'Northern Region', 3.97, 101.02, 5, 'Sungai Perak rising. Moderate flood risk in riverside areas.', 0.04, ['Gov Sensors']),
-      penang: createZone('penang', 'Penang Island', 'Georgetown', 'Penang', 'Northern Region', 5.35, 100.28, 6, 'Heavy rain warning. Flash floods likely in Georgetown.', 0.04, ['Weather API', 'User Reports']),
-      butterworth: createZone('butterworth', 'Butterworth', 'Seberang Perai', 'Penang', 'Northern Region', 5.40, 100.36, 5, 'Continuous rain. Urban flash flood risk in low areas.', 0.04, ['Weather API']),
-      alorSetar: createZone('alorSetar', 'Alor Setar', 'Anak Bukit', 'Kedah', 'Northern Region', 6.12, 100.36, 2, 'Sunny weather. Safe conditions.', 0.05, ['Weather API']),
-      sungai_petani: createZone('sungai_petani', 'Sungai Petani', 'Bandar Puteri Jaya', 'Kedah', 'Northern Region', 5.65, 100.49, 4, 'Moderate rain. Flash flood prone areas under watch.', 0.04, ['Weather API']),
-      perlis: createZone('perlis', 'Kangar', 'Pekan Kangar', 'Perlis', 'Northern Region', 6.44, 100.20, 3, 'Cloudy. Occasional showers. Low flood risk.', 0.04, ['Weather API']),
-      putrajaya: createZone('putrajaya', 'Putrajaya', 'Presint 1', 'Putrajaya', 'Federal Territory', 2.92, 101.69, 2, 'Normal conditions. Drainage infrastructure stable.', 0.03, ['Gov Sensors']),
-      labuan: createZone('labuan', 'Labuan', 'Bandar Labuan', 'Labuan', 'Federal Territory', 5.28, 115.24, 3, 'Brief showers. Coastal monitoring active.', 0.04, ['Weather API']),
-      kuching: createZone('kuching', 'Kuching', 'Batu Kawa', 'Sarawak', 'East Malaysia', 1.55, 110.35, 3, 'Scattered thunderstorms. Low risk.', 0.06, ['Weather API']),
-      sibu: createZone('sibu', 'Sibu', 'Jalan Lanang', 'Sarawak', 'East Malaysia', 2.30, 111.82, 5, 'River water level rising slowly. Monitor updates.', 0.05, ['Gov Sensors']),
-      bintulu: createZone('bintulu', 'Bintulu', 'Kidurong', 'Sarawak', 'East Malaysia', 3.17, 113.04, 4, 'Moderate rain. Low-lying areas under watch.', 0.04, ['Weather API']),
-      miri: createZone('miri', 'Miri', 'Lutong', 'Sarawak', 'East Malaysia', 4.41, 114.01, 2, 'Clear conditions.', 0.05, ['Weather API']),
-      sri_aman: createZone('sri_aman', 'Sri Aman', 'Pekan Sri Aman', 'Sarawak', 'East Malaysia', 1.24, 111.46, 6, 'River Batang Lupar rising. Moderate flood threat.', 0.05, ['Gov Sensors']),
-      kk: createZone('kk', 'Kota Kinabalu', 'Likas', 'Sabah', 'East Malaysia', 5.98, 116.07, 3, 'Brief showers expected. Safe.', 0.05, ['Weather API']),
-      sandakan: createZone('sandakan', 'Sandakan', 'Batu Sapi', 'Sabah', 'East Malaysia', 5.83, 118.11, 5, 'Moderate rain. Stay alert in coastal areas.', 0.04, ['Weather API', 'User Reports']),
-      tawau: createZone('tawau', 'Tawau', 'Bandar Tawau', 'Sabah', 'East Malaysia', 4.25, 117.89, 4, 'Occasional showers. Drainage monitoring active.', 0.04, ['Weather API']),
-      keningau: createZone('keningau', 'Keningau', 'Pekan Keningau', 'Sabah', 'East Malaysia', 5.34, 116.16, 3, 'Inland showers. Normal conditions.', 0.04, ['Weather API']),
+      kl: createZone('kl', 'Kuala Lumpur', 'Masjid Jamek', 'Kuala Lumpur', 'Federal Territory', 3.14, 101.69, 0, 'No active flood alerts. Tap refresh for live data.', 0.04, ['Weather API']),
+      shahAlam: createZone('shahAlam', 'Shah Alam', 'Taman Sri Muda', 'Selangor', 'Central Region', 3.07, 101.51, 0, 'No active flood alerts. Tap refresh for live data.', 0.05, ['Weather API']),
+      kajang: createZone('kajang', 'Kajang', 'Taman Jenaris', 'Selangor', 'Central Region', 2.99, 101.79, 0, 'No active flood alerts. Tap refresh for live data.', 0.03, ['Weather API']),
+      seriKembangan: createZone('seriKembangan', 'Seri Kembangan', 'Jalan Besar', 'Selangor', 'Central Region', 3.03, 101.71, 0, 'No active flood alerts. Tap refresh for live data.', 0.02, ['Weather API']),
+      seremban: createZone('seremban', 'Seremban', 'Taman Ampangan', 'Negeri Sembilan', 'Central Region', 2.72, 101.94, 0, 'No active flood alerts. Tap refresh for live data.', 0.04, ['Weather API']),
+      jb: createZone('jb', 'Johor Bahru', 'Jalan Wong Ah Fook', 'Johor', 'Southern Region', 1.49, 103.74, 0, 'No active flood alerts. Tap refresh for live data.', 0.05, ['Weather API']),
+      batu_pahat: createZone('batu_pahat', 'Batu Pahat', 'Pekan Batu Pahat', 'Johor', 'Southern Region', 1.85, 102.93, 0, 'No active flood alerts. Tap refresh for live data.', 0.04, ['Weather API']),
+      muar: createZone('muar', 'Muar', 'Pagoh', 'Johor', 'Southern Region', 2.04, 102.57, 0, 'No active flood alerts. Tap refresh for live data.', 0.03, ['Weather API']),
+      melaka: createZone('melaka', 'Melaka', 'Banda Hilir', 'Melaka', 'Southern Region', 2.19, 102.25, 0, 'No active flood alerts. Tap refresh for live data.', 0.04, ['Weather API']),
+      alor_gajah: createZone('alor_gajah', 'Alor Gajah', 'Pekan Alor Gajah', 'Melaka', 'Southern Region', 2.38, 102.21, 0, 'No active flood alerts. Tap refresh for live data.', 0.03, ['Weather API']),
+      kuantan: createZone('kuantan', 'Kuantan', 'Sungai Lembing', 'Pahang', 'East Coast', 3.81, 103.32, 0, 'No active flood alerts. Tap refresh for live data.', 0.06, ['Weather API']),
+      temerloh: createZone('temerloh', 'Temerloh', 'Pekan Temerloh', 'Pahang', 'East Coast', 3.45, 102.42, 0, 'No active flood alerts. Tap refresh for live data.', 0.05, ['Weather API']),
+      cameron: createZone('cameron', 'Cameron Highlands', 'Tanah Rata', 'Pahang', 'East Coast', 4.46, 101.38, 0, 'No active flood alerts. Tap refresh for live data.', 0.04, ['Weather API']),
+      kt: createZone('kt', 'Kuala Terengganu', 'Pantai Batu Buruk', 'Terengganu', 'East Coast', 5.33, 103.15, 0, 'No active flood alerts. Tap refresh for live data.', 0.05, ['Weather API']),
+      dungun: createZone('dungun', 'Dungun', 'Paka', 'Terengganu', 'East Coast', 4.75, 103.42, 0, 'No active flood alerts. Tap refresh for live data.', 0.04, ['Weather API']),
+      kb: createZone('kb', 'Kota Bharu', 'Pasir Mas', 'Kelantan', 'East Coast', 6.12, 102.23, 0, 'No active flood alerts. Tap refresh for live data.', 0.07, ['Weather API']),
+      tanah_merah: createZone('tanah_merah', 'Tanah Merah', 'Pekan Tanah Merah', 'Kelantan', 'East Coast', 5.80, 102.15, 0, 'No active flood alerts. Tap refresh for live data.', 0.05, ['Weather API']),
+      gua_musang: createZone('gua_musang', 'Gua Musang', 'Bandar Gua Musang', 'Kelantan', 'East Coast', 4.88, 101.97, 0, 'No active flood alerts. Tap refresh for live data.', 0.04, ['Weather API']),
+      ipoh: createZone('ipoh', 'Ipoh', 'Taman Canning', 'Perak', 'Northern Region', 4.59, 101.09, 0, 'No active flood alerts. Tap refresh for live data.', 0.04, ['Weather API']),
+      taiping: createZone('taiping', 'Taiping', 'Kamunting', 'Perak', 'Northern Region', 4.85, 100.74, 0, 'No active flood alerts. Tap refresh for live data.', 0.04, ['Weather API']),
+      teluk_intan: createZone('teluk_intan', 'Teluk Intan', 'Pekan Teluk Intan', 'Perak', 'Northern Region', 3.97, 101.02, 0, 'No active flood alerts. Tap refresh for live data.', 0.04, ['Weather API']),
+      penang: createZone('penang', 'Penang Island', 'Georgetown', 'Penang', 'Northern Region', 5.35, 100.28, 0, 'No active flood alerts. Tap refresh for live data.', 0.04, ['Weather API']),
+      butterworth: createZone('butterworth', 'Butterworth', 'Seberang Perai', 'Penang', 'Northern Region', 5.40, 100.36, 0, 'No active flood alerts. Tap refresh for live data.', 0.04, ['Weather API']),
+      alorSetar: createZone('alorSetar', 'Alor Setar', 'Anak Bukit', 'Kedah', 'Northern Region', 6.12, 100.36, 0, 'No active flood alerts. Tap refresh for live data.', 0.05, ['Weather API']),
+      sungai_petani: createZone('sungai_petani', 'Sungai Petani', 'Bandar Puteri Jaya', 'Kedah', 'Northern Region', 5.65, 100.49, 0, 'No active flood alerts. Tap refresh for live data.', 0.04, ['Weather API']),
+      perlis: createZone('perlis', 'Kangar', 'Pekan Kangar', 'Perlis', 'Northern Region', 6.44, 100.20, 0, 'No active flood alerts. Tap refresh for live data.', 0.04, ['Weather API']),
+      putrajaya: createZone('putrajaya', 'Putrajaya', 'Presint 1', 'Putrajaya', 'Federal Territory', 2.92, 101.69, 0, 'No active flood alerts. Tap refresh for live data.', 0.03, ['Weather API']),
+      labuan: createZone('labuan', 'Labuan', 'Bandar Labuan', 'Labuan', 'Federal Territory', 5.28, 115.24, 0, 'No active flood alerts. Tap refresh for live data.', 0.04, ['Weather API']),
+      kuching: createZone('kuching', 'Kuching', 'Batu Kawa', 'Sarawak', 'East Malaysia', 1.55, 110.35, 0, 'No active flood alerts. Tap refresh for live data.', 0.06, ['Weather API']),
+      sibu: createZone('sibu', 'Sibu', 'Jalan Lanang', 'Sarawak', 'East Malaysia', 2.30, 111.82, 0, 'No active flood alerts. Tap refresh for live data.', 0.05, ['Weather API']),
+      bintulu: createZone('bintulu', 'Bintulu', 'Kidurong', 'Sarawak', 'East Malaysia', 3.17, 113.04, 0, 'No active flood alerts. Tap refresh for live data.', 0.04, ['Weather API']),
+      miri: createZone('miri', 'Miri', 'Lutong', 'Sarawak', 'East Malaysia', 4.41, 114.01, 0, 'No active flood alerts. Tap refresh for live data.', 0.05, ['Weather API']),
+      sri_aman: createZone('sri_aman', 'Sri Aman', 'Pekan Sri Aman', 'Sarawak', 'East Malaysia', 1.24, 111.46, 0, 'No active flood alerts. Tap refresh for live data.', 0.05, ['Weather API']),
+      kk: createZone('kk', 'Kota Kinabalu', 'Likas', 'Sabah', 'East Malaysia', 5.98, 116.07, 0, 'No active flood alerts. Tap refresh for live data.', 0.05, ['Weather API']),
+      sandakan: createZone('sandakan', 'Sandakan', 'Batu Sapi', 'Sabah', 'East Malaysia', 5.83, 118.11, 0, 'No active flood alerts. Tap refresh for live data.', 0.04, ['Weather API']),
+      tawau: createZone('tawau', 'Tawau', 'Bandar Tawau', 'Sabah', 'East Malaysia', 4.25, 117.89, 0, 'No active flood alerts. Tap refresh for live data.', 0.04, ['Weather API']),
+      keningau: createZone('keningau', 'Keningau', 'Pekan Keningau', 'Sabah', 'East Malaysia', 5.34, 116.16, 0, 'No active flood alerts. Tap refresh for live data.', 0.04, ['Weather API']),
     };
   }
   return floodZonesCache;
@@ -207,24 +255,37 @@ export const updateFloodZone = (id: string, updates: Partial<FloodZone>) => {
 
 export const addFloodZone = (zone: FloodZone) => {
   if (floodZonesCache) {
-    // Find if a zone with the same name already exists in the same state
-    const existingZoneId = Object.keys(floodZonesCache).find(id => {
-      const existing = floodZonesCache![id];
-      return existing.state === zone.state && 
-             (existing.name.toLowerCase() === zone.name.toLowerCase() || 
-              existing.specificLocation.toLowerCase() === zone.name.toLowerCase());
-    });
+    // Find if a zone with the same ID or same name+state already exists
+    const normName = (n: string) => n.replace(/\s*\(.*?\)\s*/g, '').trim().toLowerCase();
+    const existingZoneId =
+      floodZonesCache[zone.id]
+        ? zone.id
+        : Object.keys(floodZonesCache).find(id => {
+            const existing = floodZonesCache![id];
+            return existing.state === zone.state &&
+              (normName(existing.name) === normName(zone.name) ||
+               normName(existing.specificLocation) === normName(zone.name));
+          });
 
     if (existingZoneId) {
-      // Merge the new report into the existing zone
       const existing = floodZonesCache[existingZoneId];
+      const isLiveWeatherZone = zone.id.startsWith('live_');
+
       const updatedZone = {
         ...existing,
-        severity: Math.max(existing.severity, zone.severity),
-        forecast: zone.forecast, // Take the latest forecast
+        // Live weather refresh → replace severity (Google Weather is the source of truth for weather).
+        // User uploads → take the higher value (cumulative community reports).
+        severity: isLiveWeatherZone
+          ? zone.severity
+          : Math.max(existing.severity, zone.severity),
+        forecast: zone.forecast,
         lastUpdated: new Date().toISOString(),
-        drainageBlockage: Math.max(existing.drainageBlockage, zone.drainageBlockage),
-        rainfall: Math.max(existing.rainfall, zone.rainfall),
+        drainageBlockage: isLiveWeatherZone
+          ? zone.drainageBlockage
+          : Math.max(existing.drainageBlockage, zone.drainageBlockage),
+        rainfall: isLiveWeatherZone
+          ? zone.rainfall
+          : Math.max(existing.rainfall, zone.rainfall),
         aiConfidence: Math.max(existing.aiConfidence, zone.aiConfidence),
         aiAnalysisText: zone.aiAnalysisText,
         aiAnalysis: zone.aiAnalysis,
@@ -233,26 +294,20 @@ export const addFloodZone = (zone: FloodZone) => {
         estimatedEndTime: zone.estimatedEndTime || existing.estimatedEndTime,
         eventType: zone.eventType || existing.eventType,
         sources: Array.from(new Set([...existing.sources, ...zone.sources])),
-        notifiedDepts: zone.notifiedDepts ? Array.from(new Set([...(existing.notifiedDepts || []), ...zone.notifiedDepts])) : existing.notifiedDepts
+        notifiedDepts: zone.notifiedDepts
+          ? Array.from(new Set([...(existing.notifiedDepts || []), ...zone.notifiedDepts]))
+          : existing.notifiedDepts
       };
       floodZonesCache[existingZoneId] = updatedZone;
-      
-      // Save to Firebase
-      saveFloodZone(updatedZone).catch(err => 
+      saveFloodZone(updatedZone).catch(err =>
         console.error('Error saving updated zone to Firebase:', err)
       );
-      
-      // Notification is dispatched by AlertsScreen for live zones; only dispatch here for user-reported zones
     } else {
-      // Add as a new zone
       floodZonesCache[zone.id] = zone;
-      
-      // Save to Firebase
-      saveFloodZone(zone).catch(err => 
+      saveFloodZone(zone).catch(err =>
         console.error('Error saving new zone to Firebase:', err)
       );
     }
-    // Dispatch a general update event
     window.dispatchEvent(new CustomEvent('floodZonesUpdated'));
   }
 };
@@ -272,7 +327,15 @@ export const useFloodZones = () => {
     const liveZonesRef = ref(rtdb, 'liveZones');
     const unsubscribeFirebase = onValue(liveZonesRef, (snapshot) => {
       if (snapshot.exists()) {
-        const firebaseZones = snapshot.val() as Record<string, FloodZone>;
+        const rawFirebaseZones = snapshot.val() as Record<string, FloodZone>;
+        // Strip parentheticals like "(Default)" from zone names for clean display
+        const firebaseZones: Record<string, FloodZone> = {};
+        for (const [id, zone] of Object.entries(rawFirebaseZones)) {
+          firebaseZones[id] = {
+            ...zone,
+            name: zone.name.replace(/\s*\(.*?\)\s*/g, '').trim() || zone.name
+          };
+        }
         // Completely replace local cache with Firebase data
         floodZonesCache = firebaseZones;
         setZones({ ...floodZonesCache });

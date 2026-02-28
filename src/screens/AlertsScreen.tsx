@@ -1,16 +1,19 @@
 import { useMemo, useState } from 'react';
 import StatusBar from '../components/StatusBar';
 import BottomNav from '../components/BottomNav';
-import { FloodZone, addFloodZone, createZone, useFloodZones } from '../data/floodZones';
+import { FloodZone, addFloodZone, createZone, getFloodZones, reconcileStateSeverity, useFloodZones } from '../data/floodZones';
 import { fetchLiveWeatherAndCCTV, fetchStateTownsWithWeather } from '../services/gemini';
 
 interface AlertsScreenProps {
   onTabChange: (tab: 'map' | 'report' | 'alert') => void;
   onAlertClick: (zoneId: string) => void;
   onScanClick: () => void;
+  initialState?: string | null;
+  onClearNotifications: () => void;
+  onNotificationsReady: (items: { zoneId: string; zone: FloodZone }[]) => void;
 }
 
-export default function AlertsScreen({ onTabChange, onAlertClick, onScanClick }: AlertsScreenProps) {
+export default function AlertsScreen({ onTabChange, onAlertClick, onScanClick, initialState, onClearNotifications, onNotificationsReady }: AlertsScreenProps) {
   const allZones = useFloodZones();
   
   const zones = useMemo(() => {
@@ -33,14 +36,13 @@ export default function AlertsScreen({ onTabChange, onAlertClick, onScanClick }:
     return filtered;
   }, [allZones]);
 
-  const [selectedState, setSelectedState] = useState<string | null>(null);
+  const [selectedState, setSelectedState] = useState<string | null>(initialState ?? null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
 
   const handleRefreshLiveData = async () => {
-    if (isRefreshing) return; // prevent double-run
-    // Clear existing notifications so fresh ones can appear for this refresh cycle
-    window.dispatchEvent(new CustomEvent('clearFloodNotifications'));
+    if (isRefreshing) return;
+    onClearNotifications();
     setIsRefreshing(true);
 
     const allStatesList = [
@@ -78,6 +80,7 @@ export default function AlertsScreen({ onTabChange, onAlertClick, onScanClick }:
 
         setRefreshStatus(`Found ${towns.length} towns. Updating...`);
 
+        const townZones: { zoneId: string; zone: FloodZone }[] = [];
         towns.forEach((townData) => {
           const zoneId = `live_town_${townData.town.toLowerCase().replace(/\s+/g, '_')}_${selectedState.toLowerCase().replace(/\s+/g, '_')}`;
           const newZone = createZone(
@@ -96,14 +99,19 @@ export default function AlertsScreen({ onTabChange, onAlertClick, onScanClick }:
           newZone.aiAnalysisText = townData.aiAnalysisText;
           newZone.eventType = townData.isRaining ? 'Heavy Rain' : 'Normal';
           addFloodZone(newZone);
-          if (townData.severity >= 4) {
-            window.dispatchEvent(new CustomEvent('floodAlert', { detail: { zoneId: zoneId, zone: newZone } }));
-          }
+          townZones.push({ zoneId, zone: newZone });
         });
         window.dispatchEvent(new CustomEvent('floodZonesUpdated'));
+        // Show one notification banner per town
+        onClearNotifications();
+        onNotificationsReady(townZones);
+        setRefreshStatus('Updated!');
+        setTimeout(() => setRefreshStatus(null), 2000);
+        return;
       } else {
         // ── Statewide overview: one query per state ──
         setRefreshStatus(`Checking weather (0/${total})...`);
+        const collectedZones: { zoneId: string; zone: FloodZone }[] = [];
         const batchSize = 8;
         for (let i = 0; i < statesToUpdate.length; i += batchSize) {
           const batch = statesToUpdate.slice(i, i + batchSize);
@@ -112,20 +120,28 @@ export default function AlertsScreen({ onTabChange, onAlertClick, onScanClick }:
               const liveData = await fetchLiveWeatherAndCCTV(state);
               const [lat, lng] = coords[state] ?? [3.14, 101.69];
               const newZoneId = `live_${state.toLowerCase().replace(/\s+/g, '_')}`;
+              // Reconcile live-weather severity with any existing user reports for this state
+              const allCurrentZones = getFloodZones();
+              const userZonesForState = Object.values(allCurrentZones).filter(
+                z => z.state === state && z.id.startsWith('user_reported_')
+              );
+              const userMaxSev = userZonesForState.reduce(
+                (max, z) => Math.max(max, z.severity), 0
+              );
+              const reconciledSev = reconcileStateSeverity(
+                liveData.severity, userMaxSev, liveData.isRaining, userZonesForState.length
+              );
               const newZone = createZone(
-                newZoneId, 'Statewide Overview',
+                newZoneId, state,  // use state name so it merges with the static zone
                 `Live Weather: ${liveData.weatherCondition}`,
                 state, 'Live Region', lat, lng,
-                liveData.severity, liveData.weatherCondition,
+                reconciledSev, liveData.weatherCondition,
                 0.05, ['Google Weather', 'CCTV Live', 'AI Analysis']
               );
               newZone.aiAnalysisText = liveData.aiAnalysisText;
               newZone.eventType = liveData.isRaining ? 'Heavy Rain' : 'Normal';
               addFloodZone(newZone);
-              // Only notify for zones with actual flood risk
-              if (liveData.severity >= 4) {
-                window.dispatchEvent(new CustomEvent('floodAlert', { detail: { zoneId: newZoneId, zone: newZone } }));
-              }
+              collectedZones.push({ zoneId: newZoneId, zone: newZone });
             } catch (err) {
               console.error(`Failed to fetch data for ${state}:`, err);
             }
@@ -136,18 +152,18 @@ export default function AlertsScreen({ onTabChange, onAlertClick, onScanClick }:
             await new Promise(r => setTimeout(r, 1000));
           }
         }
-      } // end statewide
-
-      // Dispatch notifications using stateGroups (computed from all zones in component state —
-      // includes static pre-loaded zones — independent of Firebase cache overwrite timing).
-      stateGroups.forEach(([, data]) => {
-        if (data.maxSeverity >= 4) {
-          const topZone = [...data.zones].sort((a, b) => b.severity - a.severity)[0];
-          if (topZone) {
-            window.dispatchEvent(new CustomEvent('floodAlert', { detail: { zoneId: topZone.id, zone: topZone } }));
+        // All 16 states done — fill any failures with a severity-0 fallback so all 16 slots appear
+        allStatesList.forEach(state => {
+          if (!collectedZones.find(z => z.zone.state === state)) {
+            const [lat, lng] = coords[state] ?? [3.14, 101.69];
+            const fallbackId = `live_${state.toLowerCase().replace(/\s+/g, '_')}`;
+            const fallbackZone = createZone(fallbackId, state, 'No live data available', state, '', lat, lng, 0, 'Unknown', 0.05, []);
+            collectedZones.push({ zoneId: fallbackId, zone: fallbackZone });
           }
-        }
-      });
+        });
+        // Hand all 16 directly to App — no events, no race conditions
+        onNotificationsReady(collectedZones);
+      } // end statewide
 
       setRefreshStatus('Updated!');
       setTimeout(() => setRefreshStatus(null), 2000);
@@ -198,13 +214,26 @@ export default function AlertsScreen({ onTabChange, onAlertClick, onScanClick }:
         groups[zone.state] = { region: zone.region, zones: [], maxSeverity: 0, activeReports: 0 };
       }
       groups[zone.state].zones.push(zone);
-      groups[zone.state].maxSeverity = Math.max(groups[zone.state].maxSeverity, zone.severity);
-      if (zone.severity >= 4) {
-        groups[zone.state].activeReports += 1; // Simplified logic for active reports
-      }
     });
 
-    // Sort states by max severity
+    // Apply statistical reconciliation per state: unify live-weather signal + user reports
+    Object.entries(groups).forEach(([, data]) => {
+      const liveZone = data.zones.find(
+        z => z.id.startsWith('live_') && !z.id.startsWith('live_town_')
+      );
+      const userZones = data.zones.filter(z => z.id.startsWith('user_reported_'));
+      const liveSeverity = liveZone?.severity ?? 0;
+      const userMaxSeverity = userZones.reduce((max, z) => Math.max(max, z.severity), 0);
+      const isRaining =
+        liveZone?.eventType === 'Heavy Rain' || (liveZone?.rainfall ?? 0) > 0;
+      const effectiveSeverity = reconcileStateSeverity(
+        liveSeverity, userMaxSeverity, isRaining, userZones.length
+      );
+      data.maxSeverity = effectiveSeverity;
+      data.activeReports = data.zones.filter(z => z.severity >= 4).length;
+    });
+
+    // Sort states by reconciled severity
     return Object.entries(groups).sort((a, b) => b[1].maxSeverity - a[1].maxSeverity);
   }, [zones]);
 
@@ -354,7 +383,19 @@ export default function AlertsScreen({ onTabChange, onAlertClick, onScanClick }:
     if (!selectedState) return null;
     
     const stateData = stateGroups.find(g => g[0] === selectedState)?.[1];
-    const stateZones = stateData?.zones.sort((a, b) => b.severity - a.severity) || [];
+    const rawZones = stateData?.zones.sort((a, b) => b.severity - a.severity) || [];
+
+    // Deduplicate: keep only the highest-severity zone per normalised name.
+    // Strips "(Default)" and other parenthetical suffixes before comparing.
+    const normName = (n: string) => n.replace(/\s*\(.*?\)\s*/g, '').trim().toLowerCase();
+    const seen = new Map<string, typeof rawZones[0]>();
+    rawZones.forEach(zone => {
+      const key = normName(zone.name);
+      if (!seen.has(key) || zone.severity > seen.get(key)!.severity) {
+        seen.set(key, zone);
+      }
+    });
+    const stateZones = Array.from(seen.values()).sort((a, b) => b.severity - a.severity);
 
     return (
       <>
@@ -389,30 +430,50 @@ export default function AlertsScreen({ onTabChange, onAlertClick, onScanClick }:
           </div>
         ) : (
           <div className="space-y-4">
-            {stateZones.map((zone) => {
-              let headerBgColor = 'bg-slate-100';
-              let headerBorderColor = 'border-slate-200';
-              let headerTextColor = 'text-slate-600';
-              let headerText = 'Maintenance Notice';
+            {(() => {
+              // Pre-compute reconciled severity for the live state-level zone so the badge
+              // stays in sync with user uploads without needing a full refresh.
+              const userZonesInState = stateZones.filter(z => z.id.startsWith('user_reported_'));
+              const liveStateZone = stateZones.find(
+                z => z.id.startsWith('live_') && !z.id.startsWith('live_town_')
+              );
+              const userMaxSev = userZonesInState.reduce((max, z) => Math.max(max, z.severity), 0);
+              const liveIsRaining = liveStateZone?.eventType === 'Heavy Rain' || (liveStateZone?.rainfall ?? 0) > 0;
+              const reconciledLiveSev = liveStateZone
+                ? reconcileStateSeverity(
+                    liveStateZone.severity, userMaxSev, liveIsRaining, userZonesInState.length
+                  )
+                : 0;
 
-              const isLiveUpdate = zone.id.startsWith('live_');
-              
-              if (zone.severity >= 8) {
-                headerBgColor = 'bg-[#EF4444]/10';
-                headerBorderColor = 'border-[#EF4444]/20';
-                headerTextColor = 'text-[#EF4444]';
-                headerText = isLiveUpdate ? 'LIVE UPDATE - FLOOD NOW' : 'FLOOD NOW';
-              } else if (zone.severity >= 4) {
-                headerBgColor = 'bg-[#F59E0B]/10';
-                headerBorderColor = 'border-[#F59E0B]/20';
-                headerTextColor = 'text-[#F59E0B]';
-                headerText = isLiveUpdate ? 'LIVE UPDATE - FLOOD RISK NEARBY' : 'FLOOD RISK NEARBY';
-              } else {
-                headerBgColor = 'bg-green-50';
-                headerBorderColor = 'border-green-100';
-                headerTextColor = 'text-green-600';
-                headerText = isLiveUpdate ? 'LIVE UPDATE - NORMAL' : 'NORMAL';
-              }
+              return stateZones.map((zone) => {
+                // For the live state-level zone, use the reconciled severity for display;
+                // user-reported and town zones keep their own raw severity.
+                const isStateLevelLive = zone.id.startsWith('live_') && !zone.id.startsWith('live_town_');
+                const displaySeverity = isStateLevelLive ? reconciledLiveSev : zone.severity;
+
+                let headerBgColor = 'bg-slate-100';
+                let headerBorderColor = 'border-slate-200';
+                let headerTextColor = 'text-slate-600';
+                let headerText = 'Maintenance Notice';
+
+                const isLiveUpdate = zone.id.startsWith('live_');
+
+                if (displaySeverity >= 8) {
+                  headerBgColor = 'bg-[#EF4444]/10';
+                  headerBorderColor = 'border-[#EF4444]/20';
+                  headerTextColor = 'text-[#EF4444]';
+                  headerText = isLiveUpdate ? 'LIVE UPDATE - FLOOD NOW' : 'FLOOD NOW';
+                } else if (displaySeverity >= 4) {
+                  headerBgColor = 'bg-[#F59E0B]/10';
+                  headerBorderColor = 'border-[#F59E0B]/20';
+                  headerTextColor = 'text-[#F59E0B]';
+                  headerText = isLiveUpdate ? 'LIVE UPDATE - FLOOD RISK NEARBY' : 'FLOOD RISK NEARBY';
+                } else {
+                  headerBgColor = 'bg-green-50';
+                  headerBorderColor = 'border-green-100';
+                  headerTextColor = 'text-green-600';
+                  headerText = isLiveUpdate ? 'LIVE UPDATE - NORMAL' : 'NORMAL';
+                }
 
               return (
                 <div 
@@ -425,8 +486,8 @@ export default function AlertsScreen({ onTabChange, onAlertClick, onScanClick }:
                   </div>
                   <div className="p-4">
                     <div className="flex justify-between items-start mb-1">
-                      <h3 className="font-bold text-lg">{zone.name}</h3>
-                      <span className="text-xs font-medium text-slate-500 mt-1">Level {zone.severity}</span>
+                      <h3 className="font-bold text-lg">{zone.name.replace(/\s*\(.*?\)\s*/g, '').trim() || zone.name}</h3>
+                      <span className="text-xs font-medium text-slate-500 mt-1">Level {displaySeverity}</span>
                     </div>
                     {renderFormattedAnalysis(zone.aiAnalysisText || zone.forecast)}
                     {(zone.estimatedStartTime || zone.estimatedEndTime) && (
@@ -458,7 +519,8 @@ export default function AlertsScreen({ onTabChange, onAlertClick, onScanClick }:
                   </div>
                 </div>
               );
-            })}
+              });
+            })()}
           </div>
         )}
       </>

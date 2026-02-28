@@ -416,15 +416,25 @@ export async function fetchLiveWeatherAndCCTV(
   try {
     const apiCall = ai.models.generateContent({
       model: "gemini-2.0-flash",
-      contents: `Search for the CURRENT real-time weather in ${state}, Malaysia right now.
-Also search for any active flood warnings, heavy rain alerts, or CCTV traffic flood reports for ${state} Malaysia today.
+      contents: `You are a real-time flood monitoring assistant for Malaysia.
 
-Based on live search results respond ONLY with this JSON (no markdown, no code fences):
-{"state":"${state}","weatherCondition":"<Heavy Rain|Thunderstorm|Drizzle|Cloudy|Sunny>","isRaining":<true|false>,"floodRisk":"<High|Moderate|Low>","severity":<1-10>,"aiAnalysisText":"<2 short actionable sentences for residents>"}`,
+Search Google for ALL of the following RIGHT NOW for ${state}, Malaysia:
+1. Google Weather — current weather conditions and hourly forecast for ${state}
+2. Malaysian Meteorological Department (MetMalaysia) warnings or alerts for ${state}
+3. Any active flood warnings, road closures, or water level alerts issued today for ${state}
+4. Recent news or social media reports of flooding or heavy rain in ${state}
+
+Based ONLY on what real live search results show, determine:
+- Is it currently raining or flooded in ${state}?
+- What is the actual flood risk right now?
+- Severity 1-3 = clear/normal, 4-6 = rising water/heavy rain risk, 7-10 = active flooding
+
+Respond ONLY with this JSON (no markdown, no code fences):
+{"state":"${state}","weatherCondition":"<Heavy Rain|Thunderstorm|Drizzle|Cloudy|Sunny>","isRaining":<true|false>,"floodRisk":"<High|Moderate|Low>","severity":<1-10>,"aiAnalysisText":"<2 short actionable sentences for residents based on current conditions>"}`,
       config: {
         tools: [{ googleSearch: {} }],
         temperature: 0.1,
-        maxOutputTokens: 200
+        maxOutputTokens: 250
       }
     });
 
@@ -483,15 +493,11 @@ export async function fetchLiveWeatherForTown(
   try {
     const apiCall = ai.models.generateContent({
       model: "gemini-2.0-flash",
-      contents: `Search for CURRENT real-time weather and flood conditions specifically in ${town}, ${state}, Malaysia right now today.
-Look for any flood alerts, road closures, heavy rain, or water level reports for ${town} ${state} Malaysia.
-
-Respond ONLY with this JSON (no markdown, no code fences):
-{"state":"${state}","weatherCondition":"<Heavy Rain|Thunderstorm|Drizzle|Cloudy|Sunny>","isRaining":<true|false>,"floodRisk":"<High|Moderate|Low>","severity":<1-10>,"aiAnalysisText":"<2 short actionable sentences specific to ${town} residents>"}`,
+      contents: `You are a real-time flood monitoring assistant for Malaysia.\n\nSearch Google for ALL of the following RIGHT NOW for ${town}, ${state}, Malaysia:\n1. Google Weather \u2014 current weather and forecast for ${town} ${state}\n2. Any flood warnings, road closures, or water level alerts for ${town} today\n3. MetMalaysia or JPS (Dept of Irrigation) reports for ${town} ${state}\n4. Recent social media or news reports of flooding in ${town}\n\nBased ONLY on live search results:\n- Severity 1-3 = clear/normal, 4-6 = heavy rain/rising water risk, 7-10 = active flooding\n\nRespond ONLY with this JSON (no markdown, no code fences):\n{"state":"${state}","weatherCondition":"<Heavy Rain|Thunderstorm|Drizzle|Cloudy|Sunny>","isRaining":<true|false>,"floodRisk":"<High|Moderate|Low>","severity":<1-10>,"aiAnalysisText":"<2 short actionable sentences specific to ${town} residents based on current real conditions>"}`,
       config: {
         tools: [{ googleSearch: {} }],
         temperature: 0.1,
-        maxOutputTokens: 200
+        maxOutputTokens: 250
       }
     });
 

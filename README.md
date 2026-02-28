@@ -29,7 +29,7 @@
 
 | Metric | Value |
 |:---|:---|
-| 🚀 Last Deployed | Feb 28, 2026 · 5:27 PM |
+| 🚀 Last Deployed | Feb 28, 2026 · 11:59 PM |
 | 📥 Hosting Downloads (7-day) | **26.3 MB** |
 | 👥 Daily Active Users | **9** |
 | 📈 Day 1 Retention | **35.7%** |
@@ -298,7 +298,97 @@ Rejection        │
 
 ---
 
-## 6) Challenges Faced
+## 6) Severity Reconciliation Model
+
+A core statistical layer resolves **conflicting signals** between the official live-weather AI and community photo uploads — producing a single, unified severity score used by both the state card badge and the notification banner.
+
+### 🤔 The Problem
+
+Two independent data pipelines can disagree:
+
+```
+Google Weather (Gemini grounding)  →  Kuala Lumpur = Level 1  (CLEAR)
+User photo upload (Gemini vision)   →  Bandar Kajang = Level 9  (FLOOD NOW)
+```
+
+Without reconciliation, these contradict each other on screen — destroying user trust. Showing both raw values is not acceptable; choosing one over the other ignores valid evidence.
+
+---
+
+### 📐 The Formula
+
+Let:
+- **L** = live weather severity (0–10, from Google Weather via Gemini grounding)
+- **U** = maximum user-reported severity for the same state (0–10, from photo uploads)
+- **R** = is it currently raining? (boolean, from `eventType` or `rainfall > 0` on the live zone)
+- **n** = number of active user reports for this state
+
+**Output:** a single reconciled severity **S** ∈ [0, 10]
+
+---
+
+### 🔢 Decision Rules
+
+| Case | Condition | Formula | Reasoning |
+|:---:|:---|:---|:---|
+| **1** | n = 0 (no user reports) | S = L | Live weather is sole truth — no citizen data to weigh |
+| **2** | L ≥ 4 **and** U ≥ 4 (both agree: flooding) | S = round(L × 0.6 + U × 0.4) | Official data weighted higher; citizen data corroborates |
+| **3** | L < 4 **and** U < 4 (both agree: clear) | S = round(L × 0.6 + U × 0.4) | Both signals agree on safety — weighted blend |
+| **4** | L ≥ 4, U < 4 (live=flood, user=clear) | S = L | Official weather is authoritative — trust the forecast |
+| **5** | L < 4, U ≥ 4, **R = true** (user=flood + raining) | S = round(L × 0.3 + U × 0.7) | Rain corroborates the upload — likely flash flood or drainage failure |
+| **6** | L < 4, U ≥ 4, **R = false** (user=flood, no rain) | S = min(round(L × 0.5 + U × 0.5), 6) | Possible stale upload or localised blockage — raise alert but cap at RISING WATER (6); never escalate to FLOOD NOW without weather confirmation |
+
+---
+
+### 📊 Worked Example (from the screenshot that triggered this design)
+
+```
+Scenario:
+  Google Weather → Selangor = Level 1 (clear sky, no rain)
+  User upload    → Bandar Kajang, Selangor = Level 9 (flood photo)
+  Currently raining? → No (R = false)
+  User report count → 1
+
+Apply Case 6:
+  S = min(round(1 × 0.5 + 9 × 0.5), 6)
+  S = min(round(5.0), 6)
+  S = 5  →  RISING WATER
+
+Result:
+  ✅ Selangor state badge  → RISING WATER (was CLEAR)
+  ✅ Live zone card label  → LIVE UPDATE - FLOOD RISK NEARBY  Level 5
+  ✅ User upload card      → FLOOD NOW  Level 9  (raw evidence unchanged)
+  ✅ Notification banner   → RISING WATER severity
+```
+
+No fresh weather refresh is needed — reconciliation runs at **render time** and updates the moment a user upload is stored.
+
+---
+
+### 🎯 Design Principles
+
+| Principle | How It Is Enforced |
+|:---|:---|
+| **Official data is default truth** | Live weather always wins if it says flooding (Case 4) |
+| **Rain = corroboration** | Rainfall presence shifts weight toward citizen evidence (Case 5 vs 6) |
+| **No phantom FLOOD NOW** | Without weather-confirmed rain, severity is capped at 6 — FLOOD NOW requires both signals |
+| **Additive community signal** | Multiple user reports raise `U` via `Math.max` (they reinforce, not average) |
+| **Instant reactivity** | Reconciliation is applied at render time — no polling, no refresh needed |
+
+---
+
+### 🏗️ Implementation Location
+
+| File | What Happens |
+|:---|:---|
+| `src/data/floodZones.ts` · `reconcileStateSeverity()` | Exported pure function — takes L, U, R, n and returns S |
+| `src/screens/AlertsScreen.tsx` · `stateGroups` useMemo | Reconciled S used to colour the state card badge on the main list |
+| `src/screens/AlertsScreen.tsx` · `renderLocationList` | Reconciled S used for the live zone card header and level display |
+| `src/screens/AlertsScreen.tsx` · `handleRefreshLiveData` | Reconciliation applied before writing the live zone to Firebase so notifications carry consistent severity |
+
+---
+
+## 7) Challenges Faced
 
 | Challenge | Root Cause | Solution |
 |:---|:---|:---|
@@ -313,7 +403,7 @@ Rejection        │
 
 ---
 
-## 7) Installation & Setup
+## 8) Installation & Setup
 
 **Prerequisites:** Node.js v18+ · Firebase CLI (`npm install -g firebase-tools`)
 
@@ -353,7 +443,7 @@ firebase deploy --only hosting
 
 ---
 
-## 8) Future Roadmap
+## 9) Future Roadmap
 
 | Phase | Feature | Technology | Impact |
 |:---:|:---|:---|:---|
@@ -367,7 +457,7 @@ firebase deploy --only hosting
 
 ---
 
-## 9) Full Feature Delivery Checklist
+## 10) Full Feature Delivery Checklist
 
 > Every item below is **live and testable** at [bilahujan-app.web.app](https://bilahujan-app.web.app)
 
@@ -392,10 +482,11 @@ firebase deploy --only hosting
 | Real-time ambient flood alert notification stack | ✅ |
 | Firebase live cross-user synchronization | ✅ |
 | Firebase Hosting global CDN deployment | ✅ |
+| Severity reconciliation model (live weather × user reports) | ✅ |
 
 ---
 
-## 10) Commercial Viability & Data Monetization
+## 11) Commercial Viability & Data Monetization
 
 All collected data is **fully anonymized** and **privacy-compliant** — users acknowledge the data collection notice on every app load. The anonymized dataset has direct commercial value:
 
@@ -416,7 +507,7 @@ Every citizen report simultaneously:
 
 ---
 
-## 11) Acknowledgements
+## 12) Acknowledgements
 
 - **KitaHack 2026** — for the platform and the opportunity
 - **Google** — for Gemini, Firebase, Google Maps Platform, and the @google/genai SDK

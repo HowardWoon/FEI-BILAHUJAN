@@ -51,9 +51,10 @@ interface ResultScreenProps {
   onBack: () => void;
   onTabChange: (tab: 'map' | 'report' | 'alert') => void;
   zoneId?: string | null;
+  onUploadAlert?: (zoneId: string, zone: import('../data/floodZones').FloodZone) => void;
 }
 
-export default function ResultScreen({ result, imageUri, location, onBack, onTabChange }: ResultScreenProps) {
+export default function ResultScreen({ result, imageUri, location, onBack, onTabChange, onUploadAlert }: ResultScreenProps) {
   const [isUploaded, setIsUploaded] = useState(false);
   const [nearbyUsers, setNearbyUsers] = useState(0);
   const [fullAddress, setFullAddress] = useState(location?.address || 'Unknown Location');
@@ -149,8 +150,8 @@ export default function ResultScreen({ result, imageUri, location, onBack, onTab
       
       addFloodZone(newZone);
 
-      // Fire notification banner in App.tsx
-      window.dispatchEvent(new CustomEvent('floodAlert', { detail: { zoneId: newZoneId, zone: newZone } }));
+      // Notify via direct callback — no window events
+      if (onUploadAlert) onUploadAlert(newZoneId, newZone);
     }
     setNearbyUsers(Math.floor(Math.random() * 2000) + 500); // Random number between 500 and 2500
     setIsUploaded(true);
